@@ -2,6 +2,9 @@
 data/
 reports/
 
+# Dashboard database
+*.db
+
 # Python
 __pycache__/
 *.py[cod]
