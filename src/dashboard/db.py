@@ -9,7 +9,10 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Optional
 
-from .models import Agent, AgentStatus, TaskRecord, TaskResult, SpanRecord, WorkflowRecord
+from .models import (
+    Agent, AgentStatus, TaskRecord, TaskResult, SpanRecord, WorkflowRecord,
+    AgentConfig, ExperimentRecord, ExperimentStatus,
+)
 
 DB_DIR = Path(__file__).parent.parent.parent / "data"
 DB_PATH = DB_DIR / "agent_dashboard.db"
@@ -83,6 +86,44 @@ CREATE INDEX IF NOT EXISTS idx_tasks_workflow ON tasks(workflow_id);
 CREATE INDEX IF NOT EXISTS idx_spans_trace ON spans(trace_id);
 CREATE INDEX IF NOT EXISTS idx_spans_agent ON spans(agent_id);
 CREATE INDEX IF NOT EXISTS idx_workflows_started ON workflows(started_at);
+
+CREATE TABLE IF NOT EXISTS agent_configs (
+    config_id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    version INTEGER NOT NULL DEFAULT 1,
+    prompt_precision INTEGER DEFAULT 5,
+    confidence_threshold REAL DEFAULT 0.6,
+    fallback_depth INTEGER DEFAULT 2,
+    data_prefetch INTEGER DEFAULT 1,
+    sentiment_weighting REAL DEFAULT 0.3,
+    tone_variant TEXT DEFAULT 'balanced',
+    is_baseline INTEGER DEFAULT 0,
+    created_at TEXT NOT NULL,
+    notes TEXT DEFAULT '',
+    FOREIGN KEY (agent_id) REFERENCES agents(agent_id)
+);
+
+CREATE TABLE IF NOT EXISTS experiments (
+    experiment_id TEXT PRIMARY KEY,
+    agent_id TEXT NOT NULL,
+    baseline_config_version INTEGER NOT NULL,
+    candidate_config_version INTEGER NOT NULL,
+    status TEXT DEFAULT 'pending',
+    task_sample_size INTEGER DEFAULT 100,
+    started_at TEXT NOT NULL,
+    completed_at TEXT,
+    baseline_metrics TEXT DEFAULT '{}',
+    candidate_metrics TEXT DEFAULT '{}',
+    failure_patterns TEXT DEFAULT '[]',
+    parameter_changes TEXT DEFAULT '{}',
+    promoted INTEGER,
+    FOREIGN KEY (agent_id) REFERENCES agents(agent_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_configs_agent ON agent_configs(agent_id);
+CREATE INDEX IF NOT EXISTS idx_configs_version ON agent_configs(agent_id, version);
+CREATE INDEX IF NOT EXISTS idx_experiments_agent ON experiments(agent_id);
+CREATE INDEX IF NOT EXISTS idx_experiments_started ON experiments(started_at);
 """
 
 
@@ -313,6 +354,133 @@ def _row_to_workflow(row) -> WorkflowRecord:
         result=TaskResult(row["result"]),
         total_cost_usd=row["total_cost_usd"],
         metadata=json.loads(row["metadata"])
+    )
+
+
+# ---- Agent Config CRUD ----
+
+def upsert_config(config: AgentConfig):
+    with get_connection() as conn:
+        conn.execute(
+            """INSERT OR REPLACE INTO agent_configs
+               (config_id, agent_id, version, prompt_precision, confidence_threshold,
+                fallback_depth, data_prefetch, sentiment_weighting, tone_variant,
+                is_baseline, created_at, notes)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (config.config_id, config.agent_id, config.version,
+             config.prompt_precision, config.confidence_threshold,
+             config.fallback_depth, 1 if config.data_prefetch else 0,
+             config.sentiment_weighting, config.tone_variant,
+             1 if config.is_baseline else 0, config.created_at.isoformat(),
+             config.notes)
+        )
+
+
+def get_agent_configs(agent_id: str) -> list[AgentConfig]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT * FROM agent_configs WHERE agent_id = ? ORDER BY version DESC", (agent_id,)
+        ).fetchall()
+    return [_row_to_config(r) for r in rows]
+
+
+def get_baseline_config(agent_id: str) -> Optional[AgentConfig]:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM agent_configs WHERE agent_id = ? AND is_baseline = 1 ORDER BY version DESC LIMIT 1",
+            (agent_id,)
+        ).fetchone()
+    if not row:
+        return None
+    return _row_to_config(row)
+
+
+def get_latest_config(agent_id: str) -> Optional[AgentConfig]:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM agent_configs WHERE agent_id = ? ORDER BY version DESC LIMIT 1",
+            (agent_id,)
+        ).fetchone()
+    if not row:
+        return None
+    return _row_to_config(row)
+
+
+def get_next_config_version(agent_id: str) -> int:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT MAX(version) as max_v FROM agent_configs WHERE agent_id = ?", (agent_id,)
+        ).fetchone()
+    return (row["max_v"] or 0) + 1
+
+
+def _row_to_config(row) -> AgentConfig:
+    return AgentConfig(
+        config_id=row["config_id"], agent_id=row["agent_id"],
+        version=row["version"], prompt_precision=row["prompt_precision"],
+        confidence_threshold=row["confidence_threshold"],
+        fallback_depth=row["fallback_depth"],
+        data_prefetch=bool(row["data_prefetch"]),
+        sentiment_weighting=row["sentiment_weighting"],
+        tone_variant=row["tone_variant"],
+        is_baseline=bool(row["is_baseline"]),
+        created_at=datetime.fromisoformat(row["created_at"]),
+        notes=row["notes"],
+    )
+
+
+# ---- Experiment CRUD ----
+
+def insert_experiment(exp: ExperimentRecord):
+    with get_connection() as conn:
+        conn.execute(
+            """INSERT INTO experiments
+               (experiment_id, agent_id, baseline_config_version, candidate_config_version,
+                status, task_sample_size, started_at, completed_at,
+                baseline_metrics, candidate_metrics, failure_patterns,
+                parameter_changes, promoted)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (exp.experiment_id, exp.agent_id,
+             exp.baseline_config_version, exp.candidate_config_version,
+             exp.status.value, exp.task_sample_size,
+             exp.started_at.isoformat(),
+             exp.completed_at.isoformat() if exp.completed_at else None,
+             json.dumps(exp.baseline_metrics), json.dumps(exp.candidate_metrics),
+             json.dumps(exp.failure_patterns), json.dumps(exp.parameter_changes),
+             1 if exp.promoted else (0 if exp.promoted is False else None))
+        )
+
+
+def get_experiments(agent_id: Optional[str] = None) -> list[ExperimentRecord]:
+    clauses, params = [], []
+    if agent_id:
+        clauses.append("agent_id = ?")
+        params.append(agent_id)
+    where = " WHERE " + " AND ".join(clauses) if clauses else ""
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"SELECT * FROM experiments{where} ORDER BY started_at DESC", params
+        ).fetchall()
+    return [_row_to_experiment(r) for r in rows]
+
+
+def _row_to_experiment(row) -> ExperimentRecord:
+    promoted = row["promoted"]
+    if promoted is not None:
+        promoted = bool(promoted)
+    return ExperimentRecord(
+        experiment_id=row["experiment_id"], agent_id=row["agent_id"],
+        baseline_config_version=row["baseline_config_version"],
+        candidate_config_version=row["candidate_config_version"],
+        status=ExperimentStatus(row["status"]),
+        task_sample_size=row["task_sample_size"],
+        started_at=datetime.fromisoformat(row["started_at"]),
+        completed_at=datetime.fromisoformat(row["completed_at"]) if row["completed_at"] else None,
+        baseline_metrics=json.loads(row["baseline_metrics"]),
+        candidate_metrics=json.loads(row["candidate_metrics"]),
+        failure_patterns=json.loads(row["failure_patterns"]),
+        parameter_changes=json.loads(row["parameter_changes"]),
+        promoted=promoted,
     )
 
 

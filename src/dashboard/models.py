@@ -78,3 +78,59 @@ class WorkflowRecord(BaseModel):
     result: TaskResult = TaskResult.SUCCESS
     total_cost_usd: float = 0.0
     metadata: dict = Field(default_factory=dict)
+
+
+# ==================== V2 Models ====================
+
+
+class ExperimentStatus(str, Enum):
+    PENDING = "pending"
+    INGESTING = "ingesting"
+    ANALYZING = "analyzing"
+    ADJUSTING = "adjusting"
+    RUNNING = "running"
+    CAPTURING = "capturing"
+    COMPLETE = "complete"
+    FAILED = "failed"
+
+
+class AgentConfig(BaseModel):
+    config_id: str
+    agent_id: str
+    version: int = 1
+    prompt_precision: int = 5
+    confidence_threshold: float = 0.6
+    fallback_depth: int = 2
+    data_prefetch: bool = True
+    sentiment_weighting: float = 0.3
+    tone_variant: str = "balanced"
+    is_baseline: bool = False
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+    notes: str = ""
+
+
+class FailurePattern(BaseModel):
+    pattern_id: str
+    agent_id: str
+    pattern_description: str
+    occurrence_count: int = 0
+    severity: str = "warning"
+    affected_task_types: list[str] = Field(default_factory=list)
+    common_attributes: dict = Field(default_factory=dict)
+    suggested_fix: str = ""
+
+
+class ExperimentRecord(BaseModel):
+    experiment_id: str
+    agent_id: str
+    baseline_config_version: int
+    candidate_config_version: int
+    status: ExperimentStatus = ExperimentStatus.PENDING
+    task_sample_size: int = 100
+    started_at: datetime = Field(default_factory=datetime.utcnow)
+    completed_at: Optional[datetime] = None
+    baseline_metrics: dict = Field(default_factory=dict)
+    candidate_metrics: dict = Field(default_factory=dict)
+    failure_patterns: list[dict] = Field(default_factory=list)
+    parameter_changes: dict = Field(default_factory=dict)
+    promoted: Optional[bool] = None
