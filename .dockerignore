@@ -1,0 +1,28 @@
+.git
+.gitignore
+
+# Virtual environments
+.venv
+venv
+env
+ENV
+
+# Python
+__pycache__
+*.py[cod]
+*.egg-info
+.eggs
+dist
+build
+
+# Local / generated (use a bind mount for persistence)
+data
+reports
+*.db
+
+# IDE and tooling
+.idea
+.vscode
+*.swp
+*.swo
+.pytest_cache

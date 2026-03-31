@@ -178,26 +178,59 @@ with trace_agent_task("my-agent", "code_generation") as ctx:
 - Store all persistent data in the SQLite database via `db.py` — no new JSON files
 - Keep functions focused: query modules return data, `app.py` handles rendering
 
+## Dependency Management
+
+- Runtime dependencies in `requirements.txt` are pinned (`==`) for reproducible installs.
+- Install dependencies with:
+
+```bash
+pip install -r requirements.txt
+```
+
+- To intentionally update dependencies:
+  1. Edit one or more pinned versions in `requirements.txt`
+  2. Reinstall in a clean virtual environment
+  3. Run `python verify_setup.py`
+  4. Run a dashboard smoke test: `streamlit run dashboard_app.py`
+  5. Commit only after verification passes
+
+## Configuration reference
+
+Environment variables override defaults at process startup (no config file is required).
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `DASHBOARD_DB_PATH` | `<repo root>/data/agent_dashboard.db` | SQLite database file. If set, the path is expanded (`~`) and resolved relative to the **current working directory** when not absolute. The parent directory is created automatically when the app connects. |
+
+The same codebase supports local venv installs, containers, and hosted platforms: set variables in the shell, in your host’s UI (for example Streamlit Cloud secrets), or with `docker run -e`.
+
 ## Deployment Notes
 
-### Streamlit Cloud
-```bash
-# Ensure streamlit is in requirements.txt (already done)
-# Set dashboard_app.py as the entry point in Streamlit Cloud settings
-```
+### Local or on-premises (virtualenv)
+
+Use the [Quick Start](#quick-start-get-running-in-5-minutes) steps. Optionally export `DASHBOARD_DB_PATH` before `streamlit run` if the database should live outside the repo tree.
+
+### Streamlit Cloud (hosted)
+
+- Set **Main file path** to `dashboard_app.py`.
+- Dependencies come from `requirements.txt` (pinned versions).
+- If the default database path is not writable or you need a fixed location, add `DASHBOARD_DB_PATH` in **Secrets** / environment settings using the same value you would use locally (absolute path recommended on the host).
 
 ### Docker
-```dockerfile
-FROM python:3.11-slim
-WORKDIR /app
-COPY . .
-RUN pip install -r requirements.txt
-EXPOSE 8501
-CMD ["streamlit", "run", "dashboard_app.py", "--server.address=0.0.0.0"]
+
+The canonical image definition is [`Dockerfile`](Dockerfile) at the repository root (layer-cached `pip install`, then application copy). Build and run:
+
+```bash
+docker build -t fuzebox-dashboard .
+docker run --rm -p 8501:8501 \
+  -e DASHBOARD_DB_PATH=/data/agent_dashboard.db \
+  -v fuzebox-db:/data \
+  fuzebox-dashboard
 ```
 
-### Environment Variables (optional)
-- `DASHBOARD_DB_PATH` — Override SQLite database location (default: `data/agent_dashboard.db`)
+The dashboard is available at `http://localhost:8501`. The named volume `fuzebox-db` keeps the SQLite file across container restarts. For a bind mount instead: `-v /path/on/host:/data`.
+
+`.dockerignore` excludes local `venv/`, `data/`, and similar paths so the image stays small and does not embed your development database.
 
 ---
 

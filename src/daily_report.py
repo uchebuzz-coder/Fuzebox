@@ -128,7 +128,7 @@ def save_daily_report(date=None):
     report = generate_daily_report(date)
 
     filename = REPORTS_DIR / f"daily_report_{date_str}.txt"
-    with open(filename, 'w') as f:
+    with open(filename, 'w', encoding='utf-8') as f:
         f.write(report)
 
     print(f"Daily report saved to: {filename}")

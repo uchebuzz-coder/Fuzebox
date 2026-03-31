@@ -1,7 +1,7 @@
-matplotlib>=3.7.0
-pandas>=2.0.0
-numpy>=1.24.0
-opentelemetry-api>=1.20.0
-opentelemetry-sdk>=1.20.0
-streamlit>=1.28.0
-pydantic>=2.0.0
+matplotlib==3.10.8 # Nov 2025 Release
+pandas==2.3.3 # Sep 2025 Release
+numpy==2.4.0 # Dec 2025 Release
+opentelemetry-api==1.39.0 # Dec 2025 Release
+opentelemetry-sdk==1.39.0 # Dec 2025 Release
+streamlit==1.53.0 # Jan 2026 Release
+pydantic==2.12.5 # Nov 2025 Release

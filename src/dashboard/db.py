@@ -6,13 +6,12 @@ import uuid
 import random
 from contextlib import contextmanager
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Optional
 
+from .config import get_dashboard_db_path
 from .models import Agent, AgentStatus, TaskRecord, TaskResult, SpanRecord, WorkflowRecord
 
-DB_DIR = Path(__file__).parent.parent.parent / "data"
-DB_PATH = DB_DIR / "agent_dashboard.db"
+DB_PATH = get_dashboard_db_path()
 
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS agents (
@@ -88,7 +87,7 @@ CREATE INDEX IF NOT EXISTS idx_workflows_started ON workflows(started_at);
 
 @contextmanager
 def get_connection():
-    DB_DIR.mkdir(parents=True, exist_ok=True)
+    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     conn = sqlite3.connect(str(DB_PATH))
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
