@@ -18,8 +18,8 @@ class DashboardSpanExporter(SpanExporter):
     def export(self, spans):
         for span in spans:
             attrs = dict(span.attributes) if span.attributes else {}
-            started = datetime.utcfromtimestamp(span.start_time / 1e9) if span.start_time else datetime.utcnow()
-            ended = datetime.utcfromtimestamp(span.end_time / 1e9) if span.end_time else None
+            started = datetime.fromtimestamp(span.start_time / 1e9) if span.start_time else datetime.now()
+            ended = datetime.fromtimestamp(span.end_time / 1e9) if span.end_time else None
             duration = None
             if span.start_time and span.end_time:
                 duration = (span.end_time - span.start_time) / 1e6  # ns to ms
@@ -110,7 +110,7 @@ def trace_agent_task(agent_id: str, task_type: str, workflow_id: str = None):
     """
     tracer = get_tracer()
     ctx = TaskContext(agent_id, task_type, workflow_id)
-    ctx._started_at = datetime.utcnow()
+    ctx._started_at = datetime.now()
 
     with tracer.start_as_current_span(
         f"{task_type}",
@@ -124,7 +124,7 @@ def trace_agent_task(agent_id: str, task_type: str, workflow_id: str = None):
             ctx.metadata["error"] = str(e)
             raise
         finally:
-            completed_at = datetime.utcnow()
+            completed_at = datetime.now()
             latency_ms = (completed_at - ctx._started_at).total_seconds() * 1000
 
             # Calculate cost

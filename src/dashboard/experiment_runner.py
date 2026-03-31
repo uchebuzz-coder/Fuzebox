@@ -79,7 +79,7 @@ def simulate_experiment(agent_id: str, baseline_config: AgentConfig,
                         end_date: Optional[datetime] = None) -> ExperimentRecord:
     """Run a simulated training cycle by replaying historical tasks with new parameters."""
     experiment_id = str(uuid.uuid4())[:12]
-    now = datetime.utcnow()
+    now = datetime.now()
 
     # Step 1: Ingest — get baseline metrics
     baseline_metrics = compute_agent_metrics(agent_id, start_date, end_date)
@@ -104,7 +104,7 @@ def simulate_experiment(agent_id: str, baseline_config: AgentConfig,
             baseline_config_version=baseline_config.version,
             candidate_config_version=candidate_config.version,
             status=ExperimentStatus.FAILED,
-            started_at=now, completed_at=datetime.utcnow(),
+            started_at=now, completed_at=datetime.now(),
             baseline_metrics=baseline_metrics, candidate_metrics={},
             failure_patterns=failure_patterns_data,
             parameter_changes=param_changes,
@@ -229,7 +229,7 @@ def simulate_experiment(agent_id: str, baseline_config: AgentConfig,
         candidate_config_version=candidate_config.version,
         status=ExperimentStatus.COMPLETE,
         task_sample_size=sim_total,
-        started_at=now, completed_at=datetime.utcnow(),
+        started_at=now, completed_at=datetime.now(),
         baseline_metrics=baseline_metrics,
         candidate_metrics=candidate_metrics,
         failure_patterns=failure_patterns_data,

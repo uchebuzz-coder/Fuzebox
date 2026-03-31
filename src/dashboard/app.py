@@ -71,7 +71,7 @@ def main():
     st.sidebar.html("<hr><span class='sb-section-label'>Filters</span>")
 
     dr = st.sidebar.selectbox("TIME RANGE", ["Last 7 days", "Last 14 days", "Last 30 days", "All time"], index=0)
-    now = datetime.utcnow()
+    now = datetime.now()
     start_date = now - timedelta(days={"Last 7 days": 7, "Last 14 days": 14, "Last 30 days": 30}.get(dr, 0)) if dr != "All time" else None
     end_date = now
 
@@ -101,7 +101,7 @@ def main():
 # ==================== OVERVIEW ====================
 
 def render_overview(start_date, end_date, agent_ids, theme):
-    range_label = f"Last {(datetime.utcnow() - start_date).days} days" if start_date else "All time"
+    range_label = f"Last {(datetime.now() - start_date).days} days" if start_date else "All time"
     page_header("Dashboard Overview", "Monitor agent performance, costs, and system health", [f"📅 {range_label}"])
 
     summary = metrics.performance_summary(start_date, end_date)
@@ -165,7 +165,7 @@ def render_agent_registry(agent_ids):
         empty_state("🤖", "No agents registered", "Click <strong>Load Demo Data</strong> in the sidebar to populate the registry.")
         return
 
-    total, active = len(agents), sum(1 for a in agents if a.status.value == "ACTIVE" or a.status.value == "active")
+    total, active = len(agents), sum(1 for a in agents if a.status.value.lower() == "active")
     all_skills = set(s for a in agents for s in a.skills)
     avg_in = sum(a.cost_per_1k_input for a in agents) / total
     st.html(f'<div class="kpi-grid-4">{kpi_card("🤖","Total Agents",str(total),"#6366F1",small=True)}{kpi_card("✅","Active Agents",str(active),"#22C55E",small=True)}{kpi_card("⚡","Unique Skills",str(len(all_skills)),"#8B5CF6",small=True)}{kpi_card("💰","Avg In Cost/1K",f"${avg_in:.4f}","#F59E0B",small=True)}</div>')
@@ -181,7 +181,9 @@ def render_agent_registry(agent_ids):
             df = getter(agent_ids)
             if not df.empty:
                 ddf = df.set_index("agent").drop(columns=["agent_id"], errors="ignore")
-                ddf = search_filter(ddf.reset_index().rename(columns={"index": "agent"}), "agent", f"{key}_search", "Search agent…").set_index("agent") if "agent" in ddf.reset_index().columns else ddf
+                tmp = ddf.reset_index()
+                tmp = search_filter(tmp, "agent", f"{key}_search", "Search agent…")
+                ddf = tmp.set_index("agent")
                 styled = ddf.style.map(lambda v: "background:#22C55E22;color:#4ADE80;font-weight:600" if v else "color:#334155").format(lambda v: "✓" if v else "–")
                 st.dataframe(styled, use_container_width=True, hide_index=False)
             st.html('</div>')

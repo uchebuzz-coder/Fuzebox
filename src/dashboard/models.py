@@ -1,10 +1,14 @@
 """Pydantic data models for the Agent Performance Dashboard."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
 from pydantic import BaseModel, Field
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class AgentStatus(str, Enum):
@@ -31,7 +35,7 @@ class Agent(BaseModel):
     cost_per_1k_input: float = 0.003
     cost_per_1k_output: float = 0.015
     model_name: str = "gpt-4"
-    registered_at: datetime = Field(default_factory=datetime.utcnow)
+    registered_at: datetime = Field(default_factory=_utcnow)
 
 
 class TaskRecord(BaseModel):
@@ -43,7 +47,7 @@ class TaskRecord(BaseModel):
     required_skills: list[str] = Field(default_factory=list)
     required_permissions: list[str] = Field(default_factory=list)
     result: TaskResult = TaskResult.SUCCESS
-    started_at: datetime = Field(default_factory=datetime.utcnow)
+    started_at: datetime = Field(default_factory=_utcnow)
     completed_at: Optional[datetime] = None
     latency_ms: Optional[float] = None
     input_tokens: int = 0
@@ -60,7 +64,7 @@ class SpanRecord(BaseModel):
     parent_span_id: Optional[str] = None
     agent_id: str
     operation: str
-    started_at: datetime = Field(default_factory=datetime.utcnow)
+    started_at: datetime = Field(default_factory=_utcnow)
     ended_at: Optional[datetime] = None
     duration_ms: Optional[float] = None
     status: str = "OK"
@@ -73,7 +77,7 @@ class WorkflowRecord(BaseModel):
     description: str = ""
     agent_ids: list[str] = Field(default_factory=list)
     task_ids: list[str] = Field(default_factory=list)
-    started_at: datetime = Field(default_factory=datetime.utcnow)
+    started_at: datetime = Field(default_factory=_utcnow)
     completed_at: Optional[datetime] = None
     result: TaskResult = TaskResult.SUCCESS
     total_cost_usd: float = 0.0
@@ -105,7 +109,7 @@ class AgentConfig(BaseModel):
     sentiment_weighting: float = 0.3
     tone_variant: str = "balanced"
     is_baseline: bool = False
-    created_at: datetime = Field(default_factory=datetime.utcnow)
+    created_at: datetime = Field(default_factory=_utcnow)
     notes: str = ""
 
 
@@ -127,7 +131,7 @@ class ExperimentRecord(BaseModel):
     candidate_config_version: int
     status: ExperimentStatus = ExperimentStatus.PENDING
     task_sample_size: int = 100
-    started_at: datetime = Field(default_factory=datetime.utcnow)
+    started_at: datetime = Field(default_factory=_utcnow)
     completed_at: Optional[datetime] = None
     baseline_metrics: dict = Field(default_factory=dict)
     candidate_metrics: dict = Field(default_factory=dict)

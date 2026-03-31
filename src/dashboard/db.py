@@ -202,7 +202,7 @@ def _row_to_agent(row) -> Agent:
 def insert_task(task: TaskRecord):
     with get_connection() as conn:
         conn.execute(
-            """INSERT INTO tasks
+            """INSERT OR REPLACE INTO tasks
                (task_id, agent_id, workflow_id, task_type, description,
                 required_skills, required_permissions, result, started_at, completed_at,
                 latency_ms, input_tokens, output_tokens, total_tokens,
@@ -266,7 +266,7 @@ def _row_to_task(row) -> TaskRecord:
 def insert_span(span: SpanRecord):
     with get_connection() as conn:
         conn.execute(
-            """INSERT INTO spans
+            """INSERT OR REPLACE INTO spans
                (span_id, trace_id, parent_span_id, agent_id, operation,
                 started_at, ended_at, duration_ms, status, attributes)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -316,7 +316,7 @@ def _row_to_span(row) -> SpanRecord:
 def insert_workflow(wf: WorkflowRecord):
     with get_connection() as conn:
         conn.execute(
-            """INSERT INTO workflows
+            """INSERT OR REPLACE INTO workflows
                (workflow_id, name, description, agent_ids, task_ids,
                 started_at, completed_at, result, total_cost_usd, metadata)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
@@ -434,7 +434,7 @@ def _row_to_config(row) -> AgentConfig:
 def insert_experiment(exp: ExperimentRecord):
     with get_connection() as conn:
         conn.execute(
-            """INSERT INTO experiments
+            """INSERT OR REPLACE INTO experiments
                (experiment_id, agent_id, baseline_config_version, candidate_config_version,
                 status, task_sample_size, started_at, completed_at,
                 baseline_metrics, candidate_metrics, failure_patterns,
@@ -568,7 +568,7 @@ def seed_demo_data():
     }
 
     agent_map = {a.agent_id: a for a in agents_def}
-    now = datetime.utcnow()
+    now = datetime.now()
     all_tasks = []
     all_spans = []
     all_workflows = []
