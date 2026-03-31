@@ -218,7 +218,9 @@ Use the [Quick Start](#quick-start-get-running-in-5-minutes) steps. Optionally e
 
 ### Docker
 
-The canonical image definition is [`Dockerfile`](Dockerfile) at the repository root (layer-cached `pip install`, then application copy). Build and run:
+The canonical image definition is [`Dockerfile`](Dockerfile) at the repository root (layer-cached `pip install`, then application copy). The container health endpoint is Streamlit's `/_stcore/health`.
+
+Build and run the image directly:
 
 ```bash
 docker build -t fuzebox-dashboard .
@@ -229,6 +231,20 @@ docker run --rm -p 8501:8501 \
 ```
 
 The dashboard is available at `http://localhost:8501`. The named volume `fuzebox-db` keeps the SQLite file across container restarts. For a bind mount instead: `-v /path/on/host:/data`.
+
+### Docker Compose
+
+For local containerized development, use [`docker-compose.yml`](docker-compose.yml):
+
+```bash
+docker compose up --build
+```
+
+Notes:
+- `dashboard` publishes `8501:8501`.
+- `dashboard` healthcheck uses Python (`urllib`) against `http://localhost:8501/_stcore/health` (no `curl` dependency).
+- `data/`, `reports/`, and `src/` are bind-mounted for iterative local development.
+- `cli` service is a utility profile; run with `docker compose --profile util up cli`.
 
 `.dockerignore` excludes local `venv/`, `data/`, and similar paths so the image stays small and does not embed your development database.
 
