@@ -467,7 +467,8 @@ def render_diagnose(start_date, end_date, agent_ids, theme):
         for b in wf["bands"]:
             cls = "v2-wf-success" if b["type"] == "success" else "v2-wf-warning" if b["type"] == "warning" else "v2-wf-error"
             clr = "#22C55E" if b["type"] == "success" else "#F59E0B" if b["type"] == "warning" else "#EF4444"
-            bh += f'<div class="v2-waterfall-band {cls}"><span class="v2-wf-count">{b["count"]}</span><div class="v2-wf-bar" style="width:{max(4,b["pct"]*100)}%;background:{clr};"></div><span>{b["label"]}</span><span class="v2-wf-pct">{b["pct"]:.1%}</span></div>'
+            bar_w = min(100, max(4, round(b["pct"] * 100, 1)))
+            bh += f'<div class="v2-waterfall-band {cls}"><span class="v2-wf-count">{b["count"]}</span><div style="flex:1;min-width:60px"><div class="v2-wf-bar" style="width:{bar_w}%;max-width:100%;background:{clr};"></div></div><span>{b["label"]}</span><span class="v2-wf-pct">{b["pct"]:.1%}</span></div>'
         st.html(bh + '</div>')
 
     section("Failure Pattern Clusters")
@@ -485,6 +486,180 @@ def render_diagnose(start_date, end_date, agent_ids, theme):
         layout = plotly_layout(theme, height=max(200, len(adf) * 35)); layout["xaxis"].update(range=[0, 1.05], tickformat=".0%")
         fig.add_vline(x=0.8, line_dash="dash", line_color="rgba(239,68,68,0.4)", line_width=1); fig.update_layout(**layout)
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
+
+    if agent.group == "v1_pipeline":
+        _render_v1_pipeline_trace(start_date, end_date, theme)
+
+
+# ==================== V1: PIPELINE TRACE ====================
+
+def _render_v1_pipeline_trace(start_date, end_date, theme):
+    """Scenario 1 — Unexpected Charge: full pipeline trace with live telemetry."""
+    import os, sys
+    _root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    if _root not in sys.path:
+        sys.path.insert(0, _root)
+
+    V1_AGENTS = ["v1-classifier-01", "v1-triage-01", "v1-responder-01"]
+    TC01_INPUT = (
+        "Hi, I noticed a charge of $49.99 on my credit card statement from "
+        "your company but I never signed up for any premium plan. I need this "
+        "refunded immediately. My account email is user@example.com."
+    )
+
+    section("V1 Pipeline Trace — Scenario 1: Unexpected Charge")
+
+    # ── Fetch all V1 tasks from DB ──────────────────────────────────────────
+    all_v1_tasks = []
+    for aid in V1_AGENTS:
+        all_v1_tasks.extend(db.get_tasks(agent_id=aid, start_date=start_date, end_date=end_date))
+
+    # Group into complete workflows (all 3 agents present)
+    wf_map: dict = {}
+    for t in all_v1_tasks:
+        if t.workflow_id:
+            wf_map.setdefault(t.workflow_id, {})[t.agent_id] = t
+    complete_wfs = {wid: tasks for wid, tasks in wf_map.items() if all(aid in tasks for aid in V1_AGENTS)}
+
+    # ── Run Scenario 1 button ───────────────────────────────────────────────
+    # btn_col, info_col = st.columns([1, 4])
+    # with btn_col:
+    #     run_clicked = st.button("▶  Run Scenario 1", type="primary", key="v1_run_sc1")
+    # with info_col:
+    #     if not complete_wfs:
+    #         st.info("No V1 pipeline runs found. Click **Run Scenario 1** to execute (requires LLM API key in .env).")
+
+    # if run_clicked:
+    #     try:
+    #         with st.spinner("Running pipeline — 3 real LLM calls in sequence..."):
+    #             from pipeline.pipeline import run_pipeline
+    #             result = run_pipeline(TC01_INPUT)
+    #         st.success(f"Done — workflow `{result.workflow_id}` · {result.total_input_tokens + result.total_output_tokens} tokens · ${result.total_cost_usd:.6f}")
+    #         st.rerun()
+    #     except Exception as exc:
+    #         st.error(f"Pipeline failed: {exc}  —  Check that `OPENAI_API_KEY` or `ANTHROPIC_API_KEY` is set in `.env`")
+
+    # if not complete_wfs:
+    #     return
+
+    # ── Workflow selector ───────────────────────────────────────────────────
+    wf_ids = sorted(complete_wfs.keys(), reverse=True)
+
+    # Prefer billing + escalated (closest to scenario 1)
+    best = next(
+        (wid for wid in wf_ids
+         if complete_wfs[wid].get("v1-classifier-01", None) is not None
+         and complete_wfs[wid]["v1-classifier-01"].metadata.get("classification") == "billing"
+         and complete_wfs[wid].get("v1-triage-01", None) is not None
+         and complete_wfs[wid]["v1-triage-01"].metadata.get("escalation_flag", False)),
+        wf_ids[0],
+    )
+
+    def _wf_label(wid):
+        clf = complete_wfs[wid].get("v1-classifier-01")
+        cat = clf.metadata.get("classification", "?") if clf else "?"
+        ts  = clf.started_at.strftime("%b %d  %H:%M") if clf else wid
+        return f"{ts}  ·  {cat}  ·  {wid}"
+
+    selected_wf = st.selectbox("Pipeline Run", wf_ids, index=wf_ids.index(best),
+                                format_func=_wf_label, key="v1_trace_wf")
+    wf_tasks = complete_wfs[selected_wf]
+    clf_t = wf_tasks["v1-classifier-01"]
+    tri_t = wf_tasks["v1-triage-01"]
+    res_t = wf_tasks["v1-responder-01"]
+
+    # ── Pipeline input card ─────────────────────────────────────────────────
+    st.html(f'''
+    <div class="card" style="margin-bottom:14px">
+        <div style="font:.62rem Inter;color:#666;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Pipeline Input</div>
+        <div style="font:.82rem Inter;line-height:1.55;color:#ddd">{TC01_INPUT}</div>
+    </div>
+    ''')
+
+    # ── 3-step agent cards ──────────────────────────────────────────────────
+    def _step_card(task, step_title, output_html):
+        ok  = task.result.value == "success"
+        sc  = "#22C55E" if ok else "#EF4444"
+        esc = task.metadata.get("escalation_flag", False)
+        auop = task.metadata.get("auop_score", 0.0)
+        esc_badge = '<span style="background:#EF444422;color:#EF4444;padding:2px 8px;border-radius:12px;font:.67rem Inter;font-weight:600">ESCALATE</span>' if esc else ''
+        return f'''
+        <div class="card" style="height:100%">
+            <div style="font:600 .72rem Inter;color:#888;text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px">{step_title}</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+                <span style="background:{sc}22;color:{sc};padding:2px 8px;border-radius:12px;font:.67rem Inter;font-weight:600">{task.result.value.upper()}</span>
+                {esc_badge}
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+                <div><div style="font:.6rem Inter;color:#555;margin-bottom:2px;text-transform:uppercase">In Tokens</div><div style="font:600 .9rem Inter">{task.input_tokens:,}</div></div>
+                <div><div style="font:.6rem Inter;color:#555;margin-bottom:2px;text-transform:uppercase">Out Tokens</div><div style="font:600 .9rem Inter">{task.output_tokens:,}</div></div>
+                <div><div style="font:.6rem Inter;color:#555;margin-bottom:2px;text-transform:uppercase">Latency</div><div style="font:600 .9rem Inter">{(task.latency_ms or 0):,.0f}ms</div></div>
+                <div><div style="font:.6rem Inter;color:#555;margin-bottom:2px;text-transform:uppercase">AUoP</div><div style="font:600 .9rem Inter">{auop:.2e}</div></div>
+            </div>
+            <div style="font:.6rem Inter;color:#555;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Output</div>
+            {output_html}
+        </div>'''
+
+    # Classifier output HTML
+    clf_cat  = clf_t.metadata.get("classification", "—")
+    clf_conf = clf_t.metadata.get("confidence", 0.0)
+    clf_out  = f'<div style="background:#0d0d1f;border-radius:6px;padding:10px"><span style="color:#60A5FA;font:600 .85rem Inter">{clf_cat}</span><span style="color:#666;font:.75rem Inter;margin-left:8px">{clf_conf:.0%} confidence</span></div>'
+
+    # Triage output HTML
+    tri_prio  = tri_t.metadata.get("priority", 0)
+    tri_rat   = tri_t.metadata.get("rationale", "")
+    prio_clr  = "#EF4444" if tri_prio >= 4 else "#F59E0B" if tri_prio >= 3 else "#22C55E"
+    tri_out   = f'<div style="background:#0d0d1f;border-radius:6px;padding:10px"><span style="color:{prio_clr};font:700 1rem Inter">P{tri_prio}/5</span><div style="font:.72rem Inter;color:#888;margin-top:6px;line-height:1.4">{tri_rat[:110]}{"…" if len(tri_rat)>110 else ""}</div></div>'
+
+    # Responder output HTML
+    res_sent = res_t.metadata.get("sentiment", "—")
+    sent_clr = {"positive": "#22C55E", "empathetic": "#60A5FA", "neutral": "#9CA3AF"}.get(res_sent, "#9CA3AF")
+    res_out  = f'<div style="background:#0d0d1f;border-radius:6px;padding:10px"><span style="color:{sent_clr};font:600 .85rem Inter">{res_sent}</span><div style="font:.72rem Inter;color:#666;margin-top:4px">Response drafted and ready to send</div></div>'
+
+    c1, arr1, c2, arr2, c3 = st.columns([10, 1, 10, 1, 10])
+    with c1:   st.html(_step_card(clf_t, "Step 1 · Intake Classifier", clf_out))
+    with arr1: st.html('<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#444;font-size:1.4rem;padding-top:80px">→</div>')
+    with c2:   st.html(_step_card(tri_t, "Step 2 · Triage Scorer",    tri_out))
+    with arr2: st.html('<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#444;font-size:1.4rem;padding-top:80px">→</div>')
+    with c3:   st.html(_step_card(res_t, "Step 3 · Response Drafter", res_out))
+
+    # ── Escalation alert ────────────────────────────────────────────────────
+    if res_t.metadata.get("escalation_flag", False):
+        st.html(f'''
+        <div style="background:#EF444414;border:1px solid #EF444438;border-radius:8px;padding:14px 20px;margin-top:14px;display:flex;align-items:center;gap:14px">
+            <span style="font-size:1.3rem">🚨</span>
+            <div>
+                <div style="font:600 .82rem Inter;color:#EF4444">Escalation Triggered</div>
+                <div style="font:.73rem Inter;color:#888;margin-top:3px">Priority {tri_t.metadata.get("priority")}/5 — routed to on-call support team for immediate action</div>
+            </div>
+        </div>
+        ''')
+
+    # ── Pipeline cost / token summary ───────────────────────────────────────
+    total_tok  = clf_t.total_tokens + tri_t.total_tokens + res_t.total_tokens
+    total_cost = clf_t.cost_usd + tri_t.cost_usd + res_t.cost_usd
+    total_lat  = (clf_t.latency_ms or 0) + (tri_t.latency_ms or 0) + (res_t.latency_ms or 0)
+
+    st.html(f'''
+    <div style="display:flex;gap:12px;margin-top:14px">
+        <div style="background:#111;border-radius:8px;padding:12px 18px;flex:1;text-align:center">
+            <div style="font:.6rem Inter;color:#555;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Total Tokens</div>
+            <div style="font:700 1.05rem Inter">{total_tok:,}</div>
+        </div>
+        <div style="background:#111;border-radius:8px;padding:12px 18px;flex:1;text-align:center">
+            <div style="font:.6rem Inter;color:#555;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Total Cost</div>
+            <div style="font:700 1.05rem Inter">${total_cost:.6f}</div>
+        </div>
+        <div style="background:#111;border-radius:8px;padding:12px 18px;flex:1;text-align:center">
+            <div style="font:.6rem Inter;color:#555;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Pipeline Latency</div>
+            <div style="font:700 1.05rem Inter">{total_lat:,.0f}ms</div>
+        </div>
+        <div style="background:#111;border-radius:8px;padding:12px 18px;flex:1;text-align:center">
+            <div style="font:.6rem Inter;color:#555;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Workflow ID</div>
+            <div style="font:600 .78rem Inter;color:#888;margin-top:4px">{selected_wf}</div>
+        </div>
+    </div>
+    ''')
 
 
 # ==================== V2: TUNE ====================
