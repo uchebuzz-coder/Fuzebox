@@ -701,13 +701,53 @@ def seed_demo_data():
             )
             all_workflows.append(workflow)
 
-    # Bulk insert
-    for task in all_tasks:
-        insert_task(task)
-    for span in all_spans:
-        insert_span(span)
-    for wf in all_workflows:
-        insert_workflow(wf)
+    # Bulk insert — single transaction instead of one commit per row
+    with get_connection() as conn:
+        conn.executemany(
+            """INSERT OR REPLACE INTO tasks
+               (task_id, agent_id, workflow_id, task_type, description,
+                required_skills, required_permissions, result, started_at, completed_at,
+                latency_ms, input_tokens, output_tokens, total_tokens,
+                cost_usd, quality_score, metadata)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            [
+                (t.task_id, t.agent_id, t.workflow_id, t.task_type,
+                 t.description, json.dumps(t.required_skills),
+                 json.dumps(t.required_permissions),
+                 t.result.value, t.started_at.isoformat(),
+                 t.completed_at.isoformat() if t.completed_at else None,
+                 t.latency_ms, t.input_tokens, t.output_tokens, t.total_tokens,
+                 t.cost_usd, t.quality_score, json.dumps(t.metadata))
+                for t in all_tasks
+            ],
+        )
+        conn.executemany(
+            """INSERT OR REPLACE INTO spans
+               (span_id, trace_id, parent_span_id, agent_id, operation,
+                started_at, ended_at, duration_ms, status, attributes)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            [
+                (s.span_id, s.trace_id, s.parent_span_id,
+                 s.agent_id, s.operation, s.started_at.isoformat(),
+                 s.ended_at.isoformat() if s.ended_at else None,
+                 s.duration_ms, s.status, json.dumps(s.attributes))
+                for s in all_spans
+            ],
+        )
+        conn.executemany(
+            """INSERT OR REPLACE INTO workflows
+               (workflow_id, name, description, agent_ids, task_ids,
+                started_at, completed_at, result, total_cost_usd, metadata)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            [
+                (w.workflow_id, w.name, w.description,
+                 json.dumps(w.agent_ids), json.dumps(w.task_ids),
+                 w.started_at.isoformat(),
+                 w.completed_at.isoformat() if w.completed_at else None,
+                 w.result.value, w.total_cost_usd, json.dumps(w.metadata))
+                for w in all_workflows
+            ],
+        )
 
     return {"agents": len(agents_def), "tasks": len(all_tasks),
             "spans": len(all_spans), "workflows": len(all_workflows)}

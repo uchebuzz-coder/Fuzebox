@@ -2,10 +2,16 @@
 base = "dark"
 primaryColor = "#6366F1"
 backgroundColor = "#0F172A"
-secondaryBackgroundColor = "#0B1120"
+secondaryBackgroundColor = "#1E293B"
 textColor = "#F1F5F9"
 font = "sans serif"
 
+# Light mode: toggle via Streamlit menu (Settings → Theme → Light).
+# Streamlit's built-in light defaults apply automatically.
+# All custom CSS adapts via var(--text-color) / var(--background-color) etc.
+
+[client]
+toolbarMode = "auto"
+
 [server]
 headless = true
-

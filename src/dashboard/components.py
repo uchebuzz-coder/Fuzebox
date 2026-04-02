@@ -44,17 +44,20 @@ def diff_html(changes: dict) -> str:
     return f'<div class="card">{rows}</div>'
 
 
-def plotly_layout(theme: str, height: int = 300) -> dict:
-    d = theme == "dark"
-    gc = "rgba(255,255,255,0.04)" if d else "rgba(0,0,0,0.05)"
-    lc = "rgba(255,255,255,0.08)" if d else "rgba(0,0,0,0.08)"
+def plotly_layout(height: int = 300) -> dict:
+    """Theme-aware Plotly layout.  Reads dark_mode from session state so axis
+    labels stay legible on both dark and light backgrounds."""
+    dark = st.session_state.get("dark_mode", True)
+    tc = "#94A3B8" if dark else "#334155"   # tick / label colour
+    gc = "rgba(148,163,184,0.10)" if dark else "rgba(51,65,85,0.10)"   # gridlines
+    lc = "rgba(148,163,184,0.14)" if dark else "rgba(51,65,85,0.14)"   # axis lines
     return dict(
         height=height, margin=dict(l=0, r=0, t=10, b=0),
         paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="Inter, system-ui, sans-serif", color="#64748B" if d else "#94A3B8", size=11),
-        xaxis=dict(gridcolor=gc, linecolor=lc, tickfont=dict(size=10)),
-        yaxis=dict(gridcolor=gc, linecolor=lc, tickfont=dict(size=10)),
-        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=10)),
+        font=dict(family="Inter, system-ui, sans-serif", color=tc, size=11),
+        xaxis=dict(gridcolor=gc, linecolor=lc, tickfont=dict(size=10, color=tc)),
+        yaxis=dict(gridcolor=gc, linecolor=lc, tickfont=dict(size=10, color=tc)),
+        legend=dict(bgcolor="rgba(0,0,0,0)", font=dict(size=10, color=tc)),
         hovermode="x unified",
     )
 
@@ -70,6 +73,45 @@ def delta_html(old_val, new_val, fmt=".1%", invert=False) -> str:
         label = fmts.get(fmt, f"{diff:+.3f}")
         return f'<span class="v2-delta {cls}">{label}</span>'
     return '<span class="v2-delta v2-delta-flat">—</span>'
+
+
+def df_html_table(df, formats: dict | None = None, cell_styles: dict | None = None, hide_index: bool = True) -> None:
+    """Render a DataFrame as a themed HTML table.
+
+    Avoids Streamlit's canvas-based GlideDataEditor which ignores CSS custom-property
+    overrides and always follows the config.toml theme.
+
+    formats:     {col_name: callable(val) -> html_string}
+    cell_styles: {col_name: callable(val) -> inline_style_string}
+    """
+    import math
+    data = df.data if hasattr(df, "data") else df
+    cols = list(data.columns)
+
+    idx_th = "" if hide_index else f'<th>{data.index.name or ""}</th>'
+    header = idx_th + "".join(f"<th>{c}</th>" for c in cols)
+
+    rows = ""
+    for _, row in data.iterrows():
+        cells = ("" if hide_index
+                 else f'<td style="font-weight:600;color:var(--fb-text-muted)">{row.name}</td>')
+        for c in cols:
+            val = row[c]
+            style = cell_styles[c](val) if cell_styles and c in cell_styles else ""
+            if formats and c in formats:
+                display = formats[c](val)
+            elif isinstance(val, float) and math.isnan(val):
+                display = "—"
+            else:
+                display = "" if val is None else str(val)
+            cells += f'<td style="{style}">{display}</td>'
+        rows += f"<tr>{cells}</tr>"
+
+    st.html(
+        f'<div class="fb-table-wrap">'
+        f'<table class="fb-table"><thead><tr>{header}</tr></thead>'
+        f'<tbody>{rows}</tbody></table></div>'
+    )
 
 
 _AVATAR_ACCENTS = ["#6366F1", "#8B5CF6", "#06B6D4", "#10B981", "#F59E0B", "#EF4444", "#EC4899", "#14B8A6"]

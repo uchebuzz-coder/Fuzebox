@@ -82,83 +82,83 @@ TEST_CASES = [
     # },
 
     # # --- ACCOUNT ---
+    # {
+    #     "id": "tc-06",
+    #     "description": "Cannot reset password",
+    #     "input": (
+    #         "I'm trying to reset my password but the reset email never arrives. "
+    #         "I've checked spam and tried three times. My email is test@company.org."
+    #     ),
+    # },
+    # {
+    #     "id": "tc-07",
+    #     "description": "User permission issue",
+    #     "input": (
+    #         "One of my team members was given admin access last week but they "
+    #         "still can't see the admin panel. Their user ID is 98432. "
+    #         "I've double-checked the permissions settings and it shows 'Admin'."
+    #     ),
+    # },
+
+    # --- GENERAL ---
     {
-        "id": "tc-06",
-        "description": "Cannot reset password",
+        "id": "tc-08",
+        "description": "Feature request",
         "input": (
-            "I'm trying to reset my password but the reset email never arrives. "
-            "I've checked spam and tried three times. My email is test@company.org."
+            "It would be really helpful if we could export reports as PDF in "
+            "addition to CSV. Is this on the roadmap? We have stakeholders who "
+            "prefer PDF format for presentations."
         ),
     },
     {
-        "id": "tc-07",
-        "description": "User permission issue",
+        "id": "tc-09",
+        "description": "How-to question",
         "input": (
-            "One of my team members was given admin access last week but they "
-            "still can't see the admin panel. Their user ID is 98432. "
-            "I've double-checked the permissions settings and it shows 'Admin'."
+            "How do I set up webhook notifications for when a new record is created? "
+            "I've read the docs but the section on webhooks seems outdated — "
+            "the UI doesn't match the screenshots."
         ),
     },
 
-    # # --- GENERAL ---
-    # {
-    #     "id": "tc-08",
-    #     "description": "Feature request",
-    #     "input": (
-    #         "It would be really helpful if we could export reports as PDF in "
-    #         "addition to CSV. Is this on the roadmap? We have stakeholders who "
-    #         "prefer PDF format for presentations."
-    #     ),
-    # },
-    # {
-    #     "id": "tc-09",
-    #     "description": "How-to question",
-    #     "input": (
-    #         "How do I set up webhook notifications for when a new record is created? "
-    #         "I've read the docs but the section on webhooks seems outdated — "
-    #         "the UI doesn't match the screenshots."
-    #     ),
-    # },
+    # --- URGENT ---
+    {
+        "id": "tc-10",
+        "description": "Data loss incident",
+        "input": (
+            "URGENT: All data from the past 48 hours appears to have been deleted "
+            "from our account. This includes customer records and transaction logs. "
+            "We are a financial services firm and this is a critical compliance issue. "
+            "We need immediate escalation to your on-call engineering team."
+        ),
+    },
+    {
+        "id": "tc-11",
+        "description": "Security breach suspected",
+        "input": (
+            "We've detected unauthorized logins to several user accounts from "
+            "IP addresses in Eastern Europe. Our security team believes there "
+            "may be a credential leak on your platform. We need you to investigate "
+            "and disable these sessions immediately."
+        ),
+    },
 
-    # # --- URGENT ---
-    # {
-    #     "id": "tc-10",
-    #     "description": "Data loss incident",
-    #     "input": (
-    #         "URGENT: All data from the past 48 hours appears to have been deleted "
-    #         "from our account. This includes customer records and transaction logs. "
-    #         "We are a financial services firm and this is a critical compliance issue. "
-    #         "We need immediate escalation to your on-call engineering team."
-    #     ),
-    # },
-    # {
-    #     "id": "tc-11",
-    #     "description": "Security breach suspected",
-    #     "input": (
-    #         "We've detected unauthorized logins to several user accounts from "
-    #         "IP addresses in Eastern Europe. Our security team believes there "
-    #         "may be a credential leak on your platform. We need you to investigate "
-    #         "and disable these sessions immediately."
-    #     ),
-    # },
-
-    # # --- MIXED / EDGE CASES ---
-    # {
-    #     "id": "tc-12",
-    #     "description": "Billing + technical combined",
-    #     "input": (
-    #         "We're being charged for 10 API seats but our dashboard shows "
-    #         "we can only use 8 — two seats are greyed out with an error saying "
-    #         "'Seat allocation failed'. This is both a billing and a technical issue."
-    #     ),
-    # },
-    # {
-    #     "id": "tc-13",
-    #     "description": "Vague request",
-    #     "input": (
-    #         "Hi, things aren't working properly. Can someone help?"
-    #     ),
-    # },
+    # --- MIXED / EDGE CASES ---
+    {
+        "id": "tc-12",
+        "description": "Billing + technical combined",
+        "input": (
+            "We're being charged for 10 API seats but our dashboard shows "
+            "we can only use 8 — two seats are greyed out with an error saying "
+            "'Seat allocation failed'. This is both a billing and a technical issue."
+        ),
+    },
+    {
+        "id": "tc-13",
+        "description": "Vague request",
+        "input": (
+            "Hi, things aren't working properly. Can someone help?"
+        ),
+    },
 ]
 
 

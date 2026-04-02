@@ -12,7 +12,7 @@ from .models import AgentConfig, ExperimentStatus
 from .styles import get_all_css, sidebar_css
 from .components import (
     kpi_card, page_header, section, empty_state, card_wrap,
-    search_filter, diff_html, plotly_layout, delta_html, agent_card_html,
+    search_filter, diff_html, plotly_layout, delta_html, agent_card_html, df_html_table,
 )
 
 # ── Helpers ──
@@ -50,16 +50,24 @@ def _ensure_baseline(agent_id):
 def main():
     st.set_page_config(page_title="Agent Performance Dashboard", page_icon="⚡", layout="wide", initial_sidebar_state="expanded")
     db.init_db()
-    if "theme" not in st.session_state: st.session_state.theme = "dark"
-    theme = st.session_state.theme
-    st.html(sidebar_css(theme))
-    st.html(get_all_css(theme))
+
+    # ── Theme toggle (persisted in session state) ──
+    if "dark_mode" not in st.session_state:
+        st.session_state.dark_mode = True
+    dark = st.session_state.dark_mode
+
+    st.markdown(get_all_css(dark) + sidebar_css(), unsafe_allow_html=True)
 
     st.sidebar.html('<div class="sb-logo-wrap"><div class="sb-logo-icon">⚡</div><div><div class="sb-logo-title">FuzeBox</div><div class="sb-logo-sub">Agent Performance Platform</div></div></div>')
+    if st.sidebar.button("☀️  Light Mode" if dark else "🌙  Dark Mode", use_container_width=True):
+        st.session_state.dark_mode = not dark
+        st.rerun()
     st.sidebar.html('<span class="sb-section-label">Workspace</span>')
     if st.sidebar.button("↑  Load Demo Data", type="primary", use_container_width=False):
+        import time
         with st.spinner("Generating demo data..."):
             result = db.seed_demo_data()
+            time.sleep(2.5)
         st.sidebar.success(f"Loaded {result['agents']} agents · {result['tasks']} tasks · {result['spans']} spans · {result['workflows']} workflows")
         st.rerun()
 
@@ -84,23 +92,23 @@ def main():
     st.sidebar.html("<hr>")
 
     routes = {
-        "Overview": lambda: render_overview(start_date, end_date, agent_ids, theme),
+        "Overview": lambda: render_overview(start_date, end_date, agent_ids),
         "Agent Registry": lambda: render_agent_registry(agent_ids),
-        "Task Scorecards": lambda: render_scorecards(start_date, end_date, agent_ids, selected_group, theme),
-        "Economic Analysis": lambda: render_economics(start_date, end_date, theme),
-        "Performance Metrics": lambda: render_performance(start_date, end_date, agent_ids, theme),
-        "Workflow Traces": lambda: render_traces(start_date, end_date, theme),
-        "Diagnose": lambda: render_diagnose(start_date, end_date, agent_ids, theme),
+        "Task Scorecards": lambda: render_scorecards(start_date, end_date, agent_ids, selected_group),
+        "Economic Analysis": lambda: render_economics(start_date, end_date),
+        "Performance Metrics": lambda: render_performance(start_date, end_date, agent_ids),
+        "Workflow Traces": lambda: render_traces(start_date, end_date),
+        "Diagnose": lambda: render_diagnose(start_date, end_date, agent_ids),
         "Tune": lambda: render_tune(start_date, end_date, agent_ids),
-        "Train": lambda: render_train(start_date, end_date, agent_ids, theme),
-        "Compare": lambda: render_compare(start_date, end_date, agent_ids, theme),
+        "Train": lambda: render_train(start_date, end_date, agent_ids),
+        "Compare": lambda: render_compare(start_date, end_date, agent_ids),
     }
     routes.get(page, routes["Overview"])()
 
 
 # ==================== OVERVIEW ====================
 
-def render_overview(start_date, end_date, agent_ids, theme):
+def render_overview(start_date, end_date, agent_ids):
     range_label = f"Last {(datetime.now() - start_date).days} days" if start_date else "All time"
     page_header("Dashboard Overview", "Monitor agent performance, costs, and system health", [f"📅 {range_label}"])
 
@@ -127,7 +135,7 @@ def render_overview(start_date, end_date, agent_ids, theme):
             fig = go.Figure()
             fig.add_trace(go.Scatter(x=cost_ts["date"], y=cost_ts["total_cost"], name="Daily Cost", line=dict(color="#6366F1", width=2), fill="tozeroy", fillcolor="rgba(99,102,241,0.12)", hovertemplate="$%{y:.4f}<extra>Daily</extra>"))
             fig.add_trace(go.Scatter(x=cost_ts["date"], y=cost_ts["cumulative_cost"], name="Cumulative", line=dict(color="#F59E0B", width=2, dash="dot"), hovertemplate="$%{y:.4f}<extra>Cumulative</extra>", yaxis="y2"))
-            layout = plotly_layout(theme)
+            layout = plotly_layout()
             layout["yaxis2"] = dict(overlaying="y", side="right", gridcolor="rgba(0,0,0,0)", tickfont=dict(size=10), color="#F59E0B")
             fig.update_layout(**layout); st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         st.html('</div>')
@@ -138,7 +146,7 @@ def render_overview(start_date, end_date, agent_ids, theme):
             fig = go.Figure()
             fig.add_trace(go.Bar(x=tp["date"], y=tp["task_count"], name="Tasks", marker_color="rgba(16,185,129,0.55)", marker_line_color="rgba(16,185,129,0.8)", marker_line_width=1))
             fig.add_trace(go.Scatter(x=tp["date"], y=tp["success_rate"], name="Success Rate", line=dict(color="#F59E0B", width=2), mode="lines+markers", marker=dict(size=4), yaxis="y2"))
-            layout = plotly_layout(theme)
+            layout = plotly_layout()
             layout["yaxis2"] = dict(overlaying="y", side="right", range=[0, 1.05], gridcolor="rgba(0,0,0,0)", tickformat=".0%", tickfont=dict(size=10), color="#F59E0B")
             fig.update_layout(**layout); st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         st.html('</div>')
@@ -147,12 +155,12 @@ def render_overview(start_date, end_date, agent_ids, theme):
     lb = metrics.agent_leaderboard(start_date, end_date)
     if not lb.empty:
         lb = search_filter(lb, "Agent", "ov_lb_search", "Search by agent name…")
-        st.dataframe(lb, use_container_width=True, hide_index=True, column_config={
-            "Success Rate": st.column_config.ProgressColumn("Success Rate", format="%.1f%%", min_value=0, max_value=1),
-            "Avg Quality": st.column_config.NumberColumn("Avg Quality", format="%.2f"),
-            "Avg Latency (ms)": st.column_config.NumberColumn("Avg Latency", format="%,d ms"),
-            "Total Cost ($)": st.column_config.NumberColumn("Total Cost", format="$%.4f"),
-            "Score": st.column_config.ProgressColumn("Score", format="%.3f", min_value=0, max_value=1),
+        df_html_table(lb, formats={
+            "Success Rate": lambda v: f'<span style="color:{_sr_color(v)}">{v:.1%}</span>',
+            "Avg Quality": lambda v: f"{v:.2f}",
+            "Avg Latency (ms)": lambda v: f"{v:,.0f} ms",
+            "Total Cost ($)": lambda v: f"${v:.4f}",
+            "Score": lambda v: f'<span style="color:{_sr_color(v)}">{v:.3f}</span>',
         })
 
 
@@ -184,8 +192,13 @@ def render_agent_registry(agent_ids):
                 tmp = ddf.reset_index()
                 tmp = search_filter(tmp, "agent", f"{key}_search", "Search agent…")
                 ddf = tmp.set_index("agent")
-                styled = ddf.style.map(lambda v: "background:#22C55E22;color:#4ADE80;font-weight:600" if v else "color:#334155").format(lambda v: "✓" if v else "–")
-                st.dataframe(styled, use_container_width=True, hide_index=False)
+                _dcols = list(ddf.columns)
+                df_html_table(
+                    ddf,
+                    formats={c: (lambda v: "✓" if v else "–") for c in _dcols},
+                    cell_styles={c: (lambda v: "color:#22C55E;font-weight:600" if v else "color:var(--fb-text-faint);opacity:.5") for c in _dcols},
+                    hide_index=False,
+                )
             st.html('</div>')
 
     section("Permission Violations")
@@ -194,15 +207,15 @@ def render_agent_registry(agent_ids):
         for v in evaluators.check_permission_violations(a.agent_id):
             v["agent"] = a.name; violations.append(v)
     if violations:
-        st.html(f'<div class="ar-violation-card" style="margin-bottom:12px;"><span style="font-size:1rem">⚠️</span><div><div style="color:#FCA5A5;font:600 .8rem Inter,system-ui">{len(violations)} violation(s) detected</div><div style="color:#64748B;font-size:.75rem;margin-top:2px">Review the table below.</div></div></div>')
-        st.dataframe(pd.DataFrame(violations), use_container_width=True, hide_index=True)
+        st.html(f'<div class="ar-violation-card" style="margin-bottom:12px;"><span style="font-size:1rem">⚠️</span><div><div style="color:#EF4444;font:600 .8rem Inter,system-ui">{len(violations)} violation(s) detected</div><div style="color:var(--fb-text-muted);font-size:.75rem;margin-top:2px">Review the table below.</div></div></div>')
+        df_html_table(pd.DataFrame(violations))
     else:
-        st.html('<div class="ar-all-clear"><span style="font-size:1.2rem">✅</span><div><div style="color:#4ADE80;font:600 .85rem Inter,system-ui">All clear</div><div style="color:#334155;font-size:.75rem;margin-top:2px">No permission or skill violations detected.</div></div></div>')
+        st.html('<div class="ar-all-clear"><span style="font-size:1.2rem">✅</span><div><div style="color:#22C55E;font:600 .85rem Inter,system-ui">All clear</div><div style="color:var(--fb-text-muted);font-size:.75rem;margin-top:2px">No permission or skill violations detected.</div></div></div>')
 
 
 # ==================== TASK SCORECARDS ====================
 
-def render_scorecards(start_date, end_date, agent_ids, selected_group, theme):
+def render_scorecards(start_date, end_date, agent_ids, selected_group):
     gb = f"· {selected_group}" if selected_group != "All" else "· All groups"
     page_header("Task Scorecards", "Completion rates, quality scores, and pass/fail status per agent", [f"📋 {gb}"])
 
@@ -219,10 +232,10 @@ def render_scorecards(start_date, end_date, agent_ids, selected_group, theme):
 
     section("Agent Scorecards")
     sdf = search_filter(sdf, "Agent", "sc_search", "Search agent…")
-    st.dataframe(sdf, use_container_width=True, hide_index=True, column_config={
-        "Success Rate": st.column_config.ProgressColumn("Success Rate", format="%.1f%%", min_value=0, max_value=1),
-        "Failure Rate": st.column_config.ProgressColumn("Failure Rate", format="%.1f%%", min_value=0, max_value=1),
-        "Avg Quality": st.column_config.NumberColumn("Avg Quality", format="%.2f"),
+    df_html_table(sdf, formats={
+        "Success Rate": lambda v: f'<span style="color:{_sr_color(v)}">{v:.1%}</span>',
+        "Failure Rate": lambda v: f'<span style="color:{_sr_color(1 - v)}">{v:.1%}</span>',
+        "Avg Quality": lambda v: f"{v:.2f}",
     })
 
     if selected_group != "All":
@@ -230,7 +243,7 @@ def render_scorecards(start_date, end_date, agent_ids, selected_group, theme):
         ge = evaluators.evaluate_group_completion(selected_group, start_date, end_date)
         ip = ge["pass"]
         bg, bdr, lc = ("rgba(34,197,94,.07)", "rgba(34,197,94,.18)", "#4ADE80") if ip else ("rgba(239,68,68,.07)", "rgba(239,68,68,.18)", "#FCA5A5")
-        st.html(f'<div class="sc-group-banner" style="background:{bg};border:1px solid {bdr};"><span style="font-size:1.4rem">{"✅" if ip else "❌"}</span><div><div style="color:{lc};font:700 .72rem Inter,system-ui;letter-spacing:.08em;text-transform:uppercase">Group verdict · {"PASS" if ip else "FAIL"}</div><div style="color:#F1F5F9;font:600 .95rem Inter,system-ui">{selected_group}</div></div></div>')
+        st.html(f'<div class="sc-group-banner" style="background:{bg};border:1px solid {bdr};"><span style="font-size:1.4rem">{"✅" if ip else "❌"}</span><div><div style="color:{lc};font:700 .72rem Inter,system-ui;letter-spacing:.08em;text-transform:uppercase">Group verdict · {"PASS" if ip else "FAIL"}</div><div style="color:var(--fb-text);font:600 .95rem Inter,system-ui">{selected_group}</div></div></div>')
         gsr = f"{ge['group_success_rate']:.1%}"
         gac = "#22C55E" if ip else "#EF4444"
         gk = kpi_card("🤖","Agents",str(ge["agents"]),"#6366F1",small=True) + kpi_card("📈","Group Success",gsr,gac,small=True) + kpi_card("✅","Passing Agents",str(ge["agents_passing"]),"#22C55E",small=True) + kpi_card("🎯","Verdict","PASS" if ip else "FAIL",gac,small=True)
@@ -241,18 +254,18 @@ def render_scorecards(start_date, end_date, agent_ids, selected_group, theme):
     if not adf.empty:
         colors = [_sr_color(r) for r in adf["Success Rate"]]
         fig = go.Figure(go.Bar(x=adf["Success Rate"], y=adf["Task Type"], orientation="h", marker_color=colors, text=[f"{r:.0%}" for r in adf["Success Rate"]], textposition="outside"))
-        layout = plotly_layout(theme, height=max(260, len(adf) * 42))
+        layout = plotly_layout(height=max(260, len(adf) * 42))
         layout["xaxis"].update(range=[0, 1.12], tickformat=".0%"); layout["margin"] = dict(l=0, r=40, t=10, b=0)
         fig.update_layout(**layout); st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
 
 # ==================== ECONOMIC ANALYSIS ====================
 
-def render_economics(start_date, end_date, theme):
+def render_economics(start_date, end_date):
     page_header("Economic Analysis", "Cost breakdown, ROI, token usage, and workflow economics", ["💰 Cost intelligence"])
 
     section("ROI Calculator")
-    st.html('<div style="color:#94A3B8;font-size:.75rem;margin-bottom:6px">Manual cost per task — adjust to calculate savings vs. agent automation</div>')
+    st.html('<div style="color:var(--fb-text-muted);font-size:.75rem;margin-bottom:6px">Manual cost per task — adjust to calculate savings vs. agent automation</div>')
     manual_cost = st.slider("Manual cost per task ($)", 10, 200, 50, 5, label_visibility="collapsed")
     roi = economics.calculate_roi(manual_cost, start_date, end_date)
     if roi.get("total_tasks", 0) > 0:
@@ -269,10 +282,10 @@ def render_economics(start_date, end_date, theme):
             if not df.empty:
                 ycol = "Agent" if "Agent" in df.columns else "Task Type"
                 fig = go.Figure(go.Bar(x=df["Total Cost ($)"], y=df[ycol], orientation="h", marker_color=color, marker_opacity=0.85, text=[f"${v:.3f}" for v in df["Total Cost ($)"]], textposition="outside"))
-                layout = plotly_layout(theme, height=max(260, len(df) * 44)); layout["margin"] = dict(l=0, r=60, t=10, b=0)
+                layout = plotly_layout(height=max(260, len(df) * 44)); layout["margin"] = dict(l=0, r=60, t=10, b=0)
                 fig.update_layout(**layout); st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
                 df = search_filter(df, ycol, f"{key}_search", f"Search {ycol.lower()}…")
-                st.dataframe(df, use_container_width=True, hide_index=True)
+                df_html_table(df)
             st.html('</div>')
 
     section("Token Usage")
@@ -284,33 +297,33 @@ def render_economics(start_date, end_date, theme):
         with left:
             st.html(f'{card_wrap("Token Distribution", "Input vs. output token split")}')
             fig = go.Figure(go.Pie(labels=["Input", "Output"], values=[tokens["total_input_tokens"], tokens["total_output_tokens"]], marker_colors=["#6366F1", "#F59E0B"], hole=0.55, textinfo="label+percent"))
-            layout = plotly_layout(theme, height=260); layout.pop("xaxis", None); layout.pop("yaxis", None); layout["showlegend"] = False
+            layout = plotly_layout(height=260); layout.pop("xaxis", None); layout.pop("yaxis", None); layout["showlegend"] = False
             fig.update_layout(**layout); st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}); st.html('</div>')
         with right:
             st.html(f'{card_wrap("Tokens by Outcome", "Average token consumption per success vs. failure")}')
             fig = go.Figure(go.Bar(x=["Per Success", "Per Failure"], y=[tokens["avg_tokens_per_success"], tokens["avg_tokens_per_failure"]], marker_color=["#22C55E", "#EF4444"], marker_opacity=0.85, text=[f"{tokens['avg_tokens_per_success']:,}", f"{tokens['avg_tokens_per_failure']:,}"], textposition="outside"))
-            layout = plotly_layout(theme, height=260); fig.update_layout(**layout); st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}); st.html('</div>')
+            layout = plotly_layout(height=260); fig.update_layout(**layout); st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}); st.html('</div>')
 
     section("Cumulative Cost Trend")
     cost_ts = economics.cost_time_series(start_date, end_date)
     if not cost_ts.empty:
         st.html(f'{card_wrap("Cumulative Spend", "Running total over the selected period")}')
         fig = go.Figure(go.Scatter(x=cost_ts["date"], y=cost_ts["cumulative_cost"], line=dict(color="#6366F1", width=2.5), fill="tozeroy", fillcolor="rgba(99,102,241,0.10)"))
-        layout = plotly_layout(theme, height=280); layout["yaxis"]["tickprefix"] = "$"; fig.update_layout(**layout)
+        layout = plotly_layout(height=280); layout["yaxis"]["tickprefix"] = "$"; fig.update_layout(**layout)
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}); st.html('</div>')
 
     section("Workflow Economics")
     wf_econ = economics.workflow_economics(start_date, end_date)
     if not wf_econ.empty:
         wf_econ = search_filter(wf_econ, "Workflow", "ec_wf_search", "Search workflow…")
-        st.dataframe(wf_econ, use_container_width=True, hide_index=True)
+        df_html_table(wf_econ)
     else:
         empty_state("💰", "No economic data yet", "Load demo data to populate cost and ROI analysis.")
 
 
 # ==================== PERFORMANCE METRICS ====================
 
-def render_performance(start_date, end_date, agent_ids, theme):
+def render_performance(start_date, end_date, agent_ids):
     page_header("Performance Metrics", "Latency, throughput, completion rates, and agent leaderboard", ["⚡ Performance intelligence"])
 
     lat_stats = metrics.latency_stats(start_date=start_date, end_date=end_date)
@@ -326,7 +339,7 @@ def render_performance(start_date, end_date, agent_ids, theme):
         st.html(f'{card_wrap("Completion Rates", "Success rate per agent — dashed line marks 80%")}')
         if not cr.empty:
             fig = go.Figure(go.Bar(x=cr["Completion Rate"], y=cr["Agent"], orientation="h", marker_color=[_sr_color(r) for r in cr["Completion Rate"]], text=[f"{r:.0%}" for r in cr["Completion Rate"]], textposition="outside"))
-            layout = plotly_layout(theme, height=max(260, len(cr) * 44)); layout["xaxis"].update(range=[0, 1.15], tickformat=".0%"); layout["margin"] = dict(l=0, r=40, t=10, b=0)
+            layout = plotly_layout(height=max(260, len(cr) * 44)); layout["xaxis"].update(range=[0, 1.15], tickformat=".0%"); layout["margin"] = dict(l=0, r=40, t=10, b=0)
             fig.add_vline(x=0.8, line_dash="dot", line_color="rgba(148,163,184,0.4)"); fig.update_layout(**layout)
             st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         st.html('</div>')
@@ -337,7 +350,7 @@ def render_performance(start_date, end_date, agent_ids, theme):
             fig = go.Figure()
             fig.add_trace(go.Bar(name="P50", x=lat["Agent"], y=lat["P50 (ms)"], marker_color="#6366F1", marker_opacity=0.85))
             fig.add_trace(go.Bar(name="P90", x=lat["Agent"], y=lat["P90 (ms)"], marker_color="#F59E0B", marker_opacity=0.85))
-            layout = plotly_layout(theme, height=max(260, len(lat) * 44)); layout["barmode"] = "group"; layout["yaxis"]["ticksuffix"] = "ms"
+            layout = plotly_layout(height=max(260, len(lat) * 44)); layout["barmode"] = "group"; layout["yaxis"]["ticksuffix"] = "ms"
             fig.update_layout(**layout); st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         st.html('</div>')
 
@@ -350,7 +363,7 @@ def render_performance(start_date, end_date, agent_ids, theme):
         if lat_stats:
             for val, lbl, clr in [(lat_stats["p50_ms"], "P50", "#22C55E"), (lat_stats["p90_ms"], "P90", "#F59E0B"), (lat_stats["p99_ms"], "P99", "#EF4444")]:
                 fig.add_vline(x=val, line_dash="dot", line_color=clr, line_width=1.5, annotation_text=f"{lbl}: {val:.0f}ms", annotation_font_size=10, annotation_font_color=clr)
-        layout = plotly_layout(theme, height=300); layout["xaxis"]["ticksuffix"] = "ms"; layout["bargap"] = 0.05
+        layout = plotly_layout(height=300); layout["xaxis"]["ticksuffix"] = "ms"; layout["bargap"] = 0.05
         fig.update_layout(**layout); st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}); st.html('</div>')
 
     section("Throughput Trend")
@@ -361,7 +374,7 @@ def render_performance(start_date, end_date, agent_ids, theme):
         fig = go.Figure()
         fig.add_trace(go.Bar(x=tp["date"], y=tp["task_count"], name="Tasks", marker_color="rgba(16,185,129,0.55)"))
         fig.add_trace(go.Scatter(x=tp["date"], y=tp["success_rate"], name="Success Rate", line=dict(color="#F59E0B", width=2), mode="lines+markers", marker=dict(size=4), yaxis="y2"))
-        layout = plotly_layout(theme, height=300)
+        layout = plotly_layout(height=300)
         layout["yaxis2"] = dict(overlaying="y", side="right", range=[0, 1.05], gridcolor="rgba(0,0,0,0)", tickformat=".0%", tickfont=dict(size=10), color="#F59E0B")
         fig.update_layout(**layout); st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}); st.html('</div>')
 
@@ -369,12 +382,12 @@ def render_performance(start_date, end_date, agent_ids, theme):
     lb = metrics.agent_leaderboard(start_date, end_date)
     if not lb.empty:
         lb = search_filter(lb, "Agent", "pm_lb_search", "Search agent…")
-        st.dataframe(lb, use_container_width=True, hide_index=True, column_config={
-            "Success Rate": st.column_config.ProgressColumn("Success Rate", format="%.1f%%", min_value=0, max_value=1),
-            "Avg Quality": st.column_config.NumberColumn("Avg Quality", format="%.2f"),
-            "Avg Latency (ms)": st.column_config.NumberColumn("Avg Latency", format="%,d ms"),
-            "Total Cost ($)": st.column_config.NumberColumn("Total Cost", format="$%.4f"),
-            "Score": st.column_config.ProgressColumn("Score", format="%.3f", min_value=0, max_value=1),
+        df_html_table(lb, formats={
+            "Success Rate": lambda v: f'<span style="color:{_sr_color(v)}">{v:.1%}</span>',
+            "Avg Quality": lambda v: f"{v:.2f}",
+            "Avg Latency (ms)": lambda v: f"{v:,.0f} ms",
+            "Total Cost ($)": lambda v: f"${v:.4f}",
+            "Score": lambda v: f'<span style="color:{_sr_color(v)}">{v:.3f}</span>',
         })
     else:
         empty_state("⚡", "No performance data yet", "Load demo data to populate metrics and rankings.")
@@ -382,7 +395,7 @@ def render_performance(start_date, end_date, agent_ids, theme):
 
 # ==================== WORKFLOW TRACES ====================
 
-def render_traces(start_date, end_date, theme):
+def render_traces(start_date, end_date):
     page_header("Workflow Traces", "End-to-end span timelines and distributed trace inspection", ["Traces"])
     trace_ids = db.get_unique_trace_ids(limit=50)
     if not trace_ids:
@@ -427,7 +440,7 @@ def render_traces(start_date, end_date, theme):
         fig.add_trace(go.Bar(x=[dur], y=[label], base=[start_ms], orientation="h", marker=dict(color=cmap.get(s.agent_id, "#64748B"), opacity=1.0 if s.status == "OK" else 0.45, line=dict(color="#F87171" if s.status == "ERROR" else "rgba(0,0,0,0)", width=2)), showlegend=False, hovertemplate=f"<b>{label}</b><br>Start: {start_ms:.1f}ms<br>Duration: {dur:.1f}ms<br>Status: {s.status}<extra></extra>"))
     for aid, color in cmap.items():
         fig.add_trace(go.Bar(x=[None], y=[None], orientation="h", name=amap.get(aid, aid), marker_color=color, showlegend=True))
-    layout = plotly_layout(theme, height=max(320, len(spans_sorted) * 28 + 60))
+    layout = plotly_layout(height=max(320, len(spans_sorted) * 28 + 60))
     layout["barmode"] = "overlay"; layout["xaxis"]["title"] = "Time (ms)"; layout["yaxis"]["autorange"] = "reversed"
     layout["legend"].update(orientation="h", yanchor="bottom", y=1.01, xanchor="right", x=1); layout["margin"] = dict(l=0, r=0, t=8, b=0)
     fig.update_layout(**layout)
@@ -438,12 +451,12 @@ def render_traces(start_date, end_date, theme):
     df = pd.DataFrame(span_data)
     st.html('<div class="tr-table-card"><div class="card-title">Span Details</div><div class="card-sub">All spans sorted by start time</div>')
     df = search_filter(df, "Operation", "tr_span_search", "Search operation or agent…")
-    st.dataframe(df, use_container_width=True, hide_index=True); st.html('</div>')
+    df_html_table(df); st.html('</div>')
 
 
 # ==================== V2: DIAGNOSE ====================
 
-def render_diagnose(start_date, end_date, agent_ids, theme):
+def render_diagnose(start_date, end_date, agent_ids):
     agent = _agent_selector(agent_ids, "v2_diagnose_agent")
     if not agent:
         page_header("Diagnose", "No active agents found. Load demo data first."); return
@@ -483,17 +496,17 @@ def render_diagnose(start_date, end_date, agent_ids, theme):
     adf = metrics.accuracy_by_type(agent_id=agent.agent_id, start_date=start_date, end_date=end_date)
     if not adf.empty:
         fig = go.Figure(go.Bar(x=adf["Success Rate"], y=adf["Task Type"], orientation="h", marker_color=[_sr_color(r) for r in adf["Success Rate"]], text=[f"{r:.0%}" for r in adf["Success Rate"]], textposition="auto"))
-        layout = plotly_layout(theme, height=max(200, len(adf) * 35)); layout["xaxis"].update(range=[0, 1.05], tickformat=".0%")
+        layout = plotly_layout(height=max(200, len(adf) * 35)); layout["xaxis"].update(range=[0, 1.05], tickformat=".0%")
         fig.add_vline(x=0.8, line_dash="dash", line_color="rgba(239,68,68,0.4)", line_width=1); fig.update_layout(**layout)
         st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
     if agent.group == "v1_pipeline":
-        _render_v1_pipeline_trace(start_date, end_date, theme)
+        _render_v1_pipeline_trace(start_date, end_date)
 
 
 # ==================== V1: PIPELINE TRACE ====================
 
-def _render_v1_pipeline_trace(start_date, end_date, theme):
+def _render_v1_pipeline_trace(start_date, end_date):
     """Scenario 1 — Unexpected Charge: full pipeline trace with live telemetry."""
     import os, sys
     _root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
@@ -571,8 +584,8 @@ def _render_v1_pipeline_trace(start_date, end_date, theme):
     # ── Pipeline input card ─────────────────────────────────────────────────
     st.html(f'''
     <div class="card" style="margin-bottom:14px">
-        <div style="font:.62rem Inter;color:#666;text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Pipeline Input</div>
-        <div style="font:.82rem Inter;line-height:1.55;color:#ddd">{TC01_INPUT}</div>
+        <div style="font:.62rem Inter;color:var(--fb-text-faint);text-transform:uppercase;letter-spacing:.06em;margin-bottom:6px">Pipeline Input</div>
+        <div style="font:.82rem Inter;line-height:1.55;color:var(--fb-text)">{TC01_INPUT}</div>
     </div>
     ''')
 
@@ -585,42 +598,42 @@ def _render_v1_pipeline_trace(start_date, end_date, theme):
         esc_badge = '<span style="background:#EF444422;color:#EF4444;padding:2px 8px;border-radius:12px;font:.67rem Inter;font-weight:600">ESCALATE</span>' if esc else ''
         return f'''
         <div class="card" style="height:100%">
-            <div style="font:600 .72rem Inter;color:#888;text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px">{step_title}</div>
+            <div style="font:600 .72rem Inter;color:var(--fb-text-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:10px">{step_title}</div>
             <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
                 <span style="background:{sc}22;color:{sc};padding:2px 8px;border-radius:12px;font:.67rem Inter;font-weight:600">{task.result.value.upper()}</span>
                 {esc_badge}
             </div>
             <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
-                <div><div style="font:.6rem Inter;color:#555;margin-bottom:2px;text-transform:uppercase">In Tokens</div><div style="font:600 .9rem Inter">{task.input_tokens:,}</div></div>
-                <div><div style="font:.6rem Inter;color:#555;margin-bottom:2px;text-transform:uppercase">Out Tokens</div><div style="font:600 .9rem Inter">{task.output_tokens:,}</div></div>
-                <div><div style="font:.6rem Inter;color:#555;margin-bottom:2px;text-transform:uppercase">Latency</div><div style="font:600 .9rem Inter">{(task.latency_ms or 0):,.0f}ms</div></div>
-                <div><div style="font:.6rem Inter;color:#555;margin-bottom:2px;text-transform:uppercase">AUoP</div><div style="font:600 .9rem Inter">{auop:.2e}</div></div>
+                <div><div style="font:.6rem Inter;color:var(--fb-text-faint);margin-bottom:2px;text-transform:uppercase">In Tokens</div><div style="font:600 .9rem Inter;color:var(--fb-text)">{task.input_tokens:,}</div></div>
+                <div><div style="font:.6rem Inter;color:var(--fb-text-faint);margin-bottom:2px;text-transform:uppercase">Out Tokens</div><div style="font:600 .9rem Inter;color:var(--fb-text)">{task.output_tokens:,}</div></div>
+                <div><div style="font:.6rem Inter;color:var(--fb-text-faint);margin-bottom:2px;text-transform:uppercase">Latency</div><div style="font:600 .9rem Inter;color:var(--fb-text)">{(task.latency_ms or 0):,.0f}ms</div></div>
+                <div><div style="font:.6rem Inter;color:var(--fb-text-faint);margin-bottom:2px;text-transform:uppercase">AUoP</div><div style="font:600 .9rem Inter;color:var(--fb-text)">{auop:.2e}</div></div>
             </div>
-            <div style="font:.6rem Inter;color:#555;text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Output</div>
+            <div style="font:.6rem Inter;color:var(--fb-text-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:6px">Output</div>
             {output_html}
         </div>'''
 
     # Classifier output HTML
     clf_cat  = clf_t.metadata.get("classification", "—")
     clf_conf = clf_t.metadata.get("confidence", 0.0)
-    clf_out  = f'<div style="background:#0d0d1f;border-radius:6px;padding:10px"><span style="color:#60A5FA;font:600 .85rem Inter">{clf_cat}</span><span style="color:#666;font:.75rem Inter;margin-left:8px">{clf_conf:.0%} confidence</span></div>'
+    clf_out  = f'<div style="background:var(--fb-bg2);border-radius:6px;padding:10px"><span style="color:#60A5FA;font:600 .85rem Inter">{clf_cat}</span><span style="color:var(--fb-text-muted);font:.75rem Inter;margin-left:8px">{clf_conf:.0%} confidence</span></div>'
 
     # Triage output HTML
     tri_prio  = tri_t.metadata.get("priority", 0)
     tri_rat   = tri_t.metadata.get("rationale", "")
     prio_clr  = "#EF4444" if tri_prio >= 4 else "#F59E0B" if tri_prio >= 3 else "#22C55E"
-    tri_out   = f'<div style="background:#0d0d1f;border-radius:6px;padding:10px"><span style="color:{prio_clr};font:700 1rem Inter">P{tri_prio}/5</span><div style="font:.72rem Inter;color:#888;margin-top:6px;line-height:1.4">{tri_rat[:110]}{"…" if len(tri_rat)>110 else ""}</div></div>'
+    tri_out   = f'<div style="background:var(--fb-bg2);border-radius:6px;padding:10px"><span style="color:{prio_clr};font:700 1rem Inter">P{tri_prio}/5</span><div style="font:.72rem Inter;color:var(--fb-text-muted);margin-top:6px;line-height:1.4">{tri_rat[:110]}{"…" if len(tri_rat)>110 else ""}</div></div>'
 
     # Responder output HTML
     res_sent = res_t.metadata.get("sentiment", "—")
     sent_clr = {"positive": "#22C55E", "empathetic": "#60A5FA", "neutral": "#9CA3AF"}.get(res_sent, "#9CA3AF")
-    res_out  = f'<div style="background:#0d0d1f;border-radius:6px;padding:10px"><span style="color:{sent_clr};font:600 .85rem Inter">{res_sent}</span><div style="font:.72rem Inter;color:#666;margin-top:4px">Response drafted and ready to send</div></div>'
+    res_out  = f'<div style="background:var(--fb-bg2);border-radius:6px;padding:10px"><span style="color:{sent_clr};font:600 .85rem Inter">{res_sent}</span><div style="font:.72rem Inter;color:var(--fb-text-muted);margin-top:4px">Response drafted and ready to send</div></div>'
 
     c1, arr1, c2, arr2, c3 = st.columns([10, 1, 10, 1, 10])
     with c1:   st.html(_step_card(clf_t, "Step 1 · Intake Classifier", clf_out))
-    with arr1: st.html('<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#444;font-size:1.4rem;padding-top:80px">→</div>')
+    with arr1: st.html('<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--fb-text-faint);font-size:1.4rem;padding-top:80px">→</div>')
     with c2:   st.html(_step_card(tri_t, "Step 2 · Triage Scorer",    tri_out))
-    with arr2: st.html('<div style="height:100%;display:flex;align-items:center;justify-content:center;color:#444;font-size:1.4rem;padding-top:80px">→</div>')
+    with arr2: st.html('<div style="height:100%;display:flex;align-items:center;justify-content:center;color:var(--fb-text-faint);font-size:1.4rem;padding-top:80px">→</div>')
     with c3:   st.html(_step_card(res_t, "Step 3 · Response Drafter", res_out))
 
     # ── Escalation alert ────────────────────────────────────────────────────
@@ -630,7 +643,7 @@ def _render_v1_pipeline_trace(start_date, end_date, theme):
             <span style="font-size:1.3rem">🚨</span>
             <div>
                 <div style="font:600 .82rem Inter;color:#EF4444">Escalation Triggered</div>
-                <div style="font:.73rem Inter;color:#888;margin-top:3px">Priority {tri_t.metadata.get("priority")}/5 — routed to on-call support team for immediate action</div>
+                <div style="font:.73rem Inter;color:var(--fb-text-muted);margin-top:3px">Priority {tri_t.metadata.get("priority")}/5 — routed to on-call support team for immediate action</div>
             </div>
         </div>
         ''')
@@ -642,21 +655,21 @@ def _render_v1_pipeline_trace(start_date, end_date, theme):
 
     st.html(f'''
     <div style="display:flex;gap:12px;margin-top:14px">
-        <div style="background:#111;border-radius:8px;padding:12px 18px;flex:1;text-align:center">
-            <div style="font:.6rem Inter;color:#555;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Total Tokens</div>
-            <div style="font:700 1.05rem Inter">{total_tok:,}</div>
+        <div style="background:var(--fb-card-bg);border-radius:8px;padding:12px 18px;flex:1;text-align:center">
+            <div style="font:.6rem Inter;color:var(--fb-text-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Total Tokens</div>
+            <div style="font:700 1.05rem Inter;color:var(--fb-text)">{total_tok:,}</div>
         </div>
-        <div style="background:#111;border-radius:8px;padding:12px 18px;flex:1;text-align:center">
-            <div style="font:.6rem Inter;color:#555;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Total Cost</div>
-            <div style="font:700 1.05rem Inter">${total_cost:.6f}</div>
+        <div style="background:var(--fb-card-bg);border-radius:8px;padding:12px 18px;flex:1;text-align:center">
+            <div style="font:.6rem Inter;color:var(--fb-text-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Total Cost</div>
+            <div style="font:700 1.05rem Inter;color:var(--fb-text)">${total_cost:.6f}</div>
         </div>
-        <div style="background:#111;border-radius:8px;padding:12px 18px;flex:1;text-align:center">
-            <div style="font:.6rem Inter;color:#555;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Pipeline Latency</div>
-            <div style="font:700 1.05rem Inter">{total_lat:,.0f}ms</div>
+        <div style="background:var(--fb-card-bg);border-radius:8px;padding:12px 18px;flex:1;text-align:center">
+            <div style="font:.6rem Inter;color:var(--fb-text-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Pipeline Latency</div>
+            <div style="font:700 1.05rem Inter;color:var(--fb-text)">{total_lat:,.0f}ms</div>
         </div>
-        <div style="background:#111;border-radius:8px;padding:12px 18px;flex:1;text-align:center">
-            <div style="font:.6rem Inter;color:#555;text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Workflow ID</div>
-            <div style="font:600 .78rem Inter;color:#888;margin-top:4px">{selected_wf}</div>
+        <div style="background:var(--fb-card-bg);border-radius:8px;padding:12px 18px;flex:1;text-align:center">
+            <div style="font:.6rem Inter;color:var(--fb-text-faint);text-transform:uppercase;letter-spacing:.05em;margin-bottom:4px">Workflow ID</div>
+            <div style="font:600 .78rem Inter;color:var(--fb-text-muted);margin-top:4px">{selected_wf}</div>
         </div>
     </div>
     ''')
@@ -721,12 +734,12 @@ def render_tune(start_date, end_date, agent_ids):
     section("Config History")
     configs = db.get_agent_configs(agent.agent_id)
     if configs:
-        st.dataframe(pd.DataFrame([{"Version": f"v{c.version}", "Baseline": "Yes" if c.is_baseline else "", "Prompt": c.prompt_precision, "Conf.": c.confidence_threshold, "Fallback": c.fallback_depth, "Pre-fetch": "On" if c.data_prefetch else "Off", "Tone": c.tone_variant, "Created": c.created_at.strftime("%b %d, %H:%M"), "Notes": c.notes} for c in configs[:10]]), use_container_width=True, hide_index=True)
+        df_html_table(pd.DataFrame([{"Version": f"v{c.version}", "Baseline": "Yes" if c.is_baseline else "", "Prompt": c.prompt_precision, "Conf.": c.confidence_threshold, "Fallback": c.fallback_depth, "Pre-fetch": "On" if c.data_prefetch else "Off", "Tone": c.tone_variant, "Created": c.created_at.strftime("%b %d, %H:%M"), "Notes": c.notes} for c in configs[:10]]))
 
 
 # ==================== V2: TRAIN ====================
 
-def render_train(start_date, end_date, agent_ids, theme):
+def render_train(start_date, end_date, agent_ids):
     agent = _agent_selector(agent_ids, "v2_train_agent")
     if not agent:
         page_header("Train", "No active agents found."); return
@@ -781,12 +794,12 @@ def render_train(start_date, end_date, agent_ids, theme):
     section("Experiment History")
     exps = db.get_experiments(agent.agent_id)
     if exps:
-        st.dataframe(pd.DataFrame([{"ID": e.experiment_id, "Status": e.status.value, "Base v": e.baseline_config_version, "Cand v": e.candidate_config_version, "Sample": e.task_sample_size, "Base CR": f"{e.baseline_metrics.get('completion_rate',0):.1%}", "New CR": f"{e.candidate_metrics.get('completion_rate',0):.1%}", "Date": e.started_at.strftime("%b %d, %H:%M")} for e in exps[:10]]), use_container_width=True, hide_index=True)
+        df_html_table(pd.DataFrame([{"ID": e.experiment_id, "Status": e.status.value, "Base v": e.baseline_config_version, "Cand v": e.candidate_config_version, "Sample": e.task_sample_size, "Base CR": f"{e.baseline_metrics.get('completion_rate',0):.1%}", "New CR": f"{e.candidate_metrics.get('completion_rate',0):.1%}", "Date": e.started_at.strftime("%b %d, %H:%M")} for e in exps[:10]]))
 
 
 # ==================== V2: COMPARE ====================
 
-def render_compare(start_date, end_date, agent_ids, theme):
+def render_compare(start_date, end_date, agent_ids):
     agent = _agent_selector(agent_ids, "v2_compare_agent")
     if not agent:
         page_header("Compare", "No active agents found."); return
@@ -823,8 +836,8 @@ def render_compare(start_date, end_date, agent_ids, theme):
     fig = go.Figure()
     fig.add_trace(go.Scatterpolar(r=bvals, theta=labels, name=f"Baseline v{exp.baseline_config_version}", line=dict(color="#6366F1", width=2, dash="dash"), fill="toself", fillcolor="rgba(99,102,241,0.08)"))
     fig.add_trace(go.Scatterpolar(r=cvals, theta=labels, name=f"Candidate v{exp.candidate_config_version}", line=dict(color="#22C55E", width=2), fill="toself", fillcolor="rgba(34,197,94,0.1)"))
-    layout = plotly_layout(theme, height=350)
-    gc = "rgba(255,255,255,0.06)" if theme == "dark" else "rgba(0,0,0,0.06)"
+    layout = plotly_layout(height=350)
+    gc = "rgba(128,128,128,0.1)"
     layout["polar"] = dict(radialaxis=dict(visible=True, range=[0, 1], gridcolor=gc, tickfont=dict(size=9)), angularaxis=dict(gridcolor=gc), bgcolor="rgba(0,0,0,0)")
     fig.update_layout(**layout); st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
 
@@ -854,7 +867,7 @@ def render_compare(start_date, end_date, agent_ids, theme):
         fig = go.Figure()
         fig.add_trace(go.Scatter(x=rdf["date"], y=rdf["agent_pct"], name="Agent-Handled", line=dict(color="#6366F1", width=0), fill="tozeroy", fillcolor="rgba(99,102,241,0.3)", stackgroup="one"))
         fig.add_trace(go.Scatter(x=rdf["date"], y=rdf["human_pct"], name="Human-Required", line=dict(color="#F59E0B", width=0), fill="tonexty", fillcolor="rgba(245,158,11,0.2)", stackgroup="one"))
-        layout = plotly_layout(theme, height=250); layout["yaxis"].update(range=[0, 1.05], tickformat=".0%"); layout["showlegend"] = True
+        layout = plotly_layout(height=250); layout["yaxis"].update(range=[0, 1.05], tickformat=".0%"); layout["showlegend"] = True
         layout["legend"] = dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1, bgcolor="rgba(0,0,0,0)", font=dict(size=10))
         fig.update_layout(**layout); st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
         if len(rdf) > 1:
