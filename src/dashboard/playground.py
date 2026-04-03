@@ -179,12 +179,12 @@ def render_playground():
             return
 
         registry = get_registry()
-        agent = registry.resolve(task_type.value)
+        agent = registry.get(agent_id)
 
         if agent is None:
             st.error(
-                f"No agent in the registry can handle **{task_type.value}**. "
-                "Check that the agent YAML lists this task type."
+                f"Agent **{agent_id}** is not in the registry. "
+                "Check that the agent YAML is present and lists this task type."
             )
             return
 
