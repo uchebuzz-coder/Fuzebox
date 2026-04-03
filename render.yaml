@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: fuzebox-dashboard
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+
+    # Render builds from your repo — no local .env is available.
+    # Set ANTHROPIC_API_KEY (and any optional vars) in:
+    #   Render Dashboard → Your Service → Environment
+    envVars:
+      - key: ANTHROPIC_API_KEY
+        sync: false                     # must be set manually in the Render dashboard
+
+      - key: DASHBOARD_DB_PATH
+        value: /data/agent_dashboard.db # stored on the persistent disk below
+
+      - key: AGENTS_CONFIG_DIR
+        value: /app/agents
+
+      - key: MARKET_CONFIG_DIR
+        value: /app/config/market
+
+      - key: PYTHONUNBUFFERED
+        value: "1"
+
+    # Persistent disk — survives deploys, stores the SQLite database.
+    disk:
+      name: fuzebox-data
+      mountPath: /data
+      sizeGB: 1
+
+    healthCheckPath: /_stcore/health

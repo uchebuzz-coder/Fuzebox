@@ -1,0 +1,28 @@
+# Market Ticker Configuration
+# ────────────────────────────
+# Maps real market ticker symbols to the display names and tickers shown
+# in reports and the dashboard UI.
+#
+# To add a new stock:
+#   1. Add an entry under ``symbols`` below.
+#   2. Run: python fetch_stock.py --ticker REAL_TICKER  (or the new market CLI)
+#
+# The ``display_name`` and ``display_ticker`` fields are purely cosmetic —
+# all data is fetched and stored under the real ``ticker`` key.
+
+symbols:
+  RBLX:
+    display_name: "VIP Play Inc"
+    display_ticker: "VIPP"
+    description: "Roblox Corporation — used as the underlying data source for VIP Play Inc"
+
+  # Example: add more tickers below to enable multi-symbol support
+  # AAPL:
+  #   display_name: "Apple Inc"
+  #   display_ticker: "AAPL"
+  #   description: "Apple Inc — technology sector benchmark"
+  #
+  # MSFT:
+  #   display_name: "Microsoft Corporation"
+  #   display_ticker: "MSFT"
+  #   description: "Microsoft Corporation — cloud and software benchmark"

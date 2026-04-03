@@ -1,0 +1,63 @@
+# Claude Opus 4.6 Agent Configuration
+# ─────────────────────────────────────
+# To add a new agent: copy this file, edit the fields below, and drop the
+# new file into this directory. No Python changes required.
+
+class_name: ClaudeAgent
+
+agent_id: claude-opus-agent-01
+name: "Claude Opus 4.6 Agent"
+description: "Real Claude Opus agent for code generation, review, debugging, and research"
+model: "claude-opus-4-6"
+group: "production"
+
+# Pricing (USD per 1,000 tokens) — Opus 4.6: $5/1M input, $25/1M output
+cost_per_1k_input: 0.005
+cost_per_1k_output: 0.025
+
+skills:
+  - code_generation
+  - code_review
+  - debugging
+  - research
+  - summarization
+  - test_generation
+
+permissions:
+  - read_files
+  - write_files
+  - run_tests
+
+# Task types this agent is registered to handle in the AgentRegistry.
+# The registry routes task_type -> agent based on this list.
+task_types:
+  - code_generation
+  - code_review
+  - bug_fix
+  - research
+  - test_generation
+
+# Opus-specific inference settings
+thinking:
+  type: adaptive
+
+# System prompts keyed by task_type value.
+# Missing a task type here raises at config-load time (not silently at runtime).
+system_prompts:
+  code_generation: |
+    You are an expert software engineer. Write clean, well-commented,
+    production-ready code. Include type hints and docstrings.
+  code_review: |
+    You are a senior code reviewer. Evaluate code for: correctness,
+    security vulnerabilities, performance, readability, and best practices.
+    Be specific — cite line references where relevant.
+  bug_fix: |
+    You are an expert debugger. Identify the root cause of the error,
+    explain why it occurs, and provide a corrected version of the code.
+  research: |
+    You are a research assistant. Provide accurate, well-structured summaries.
+    Include key concepts, practical examples, and common pitfalls where relevant.
+  test_generation: |
+    You are a QA engineer who writes thorough unit tests.
+    Cover happy paths, edge cases, and error conditions.
+    Use the standard testing framework for the language.

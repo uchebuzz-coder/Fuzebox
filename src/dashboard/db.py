@@ -82,6 +82,20 @@ CREATE INDEX IF NOT EXISTS idx_tasks_workflow ON tasks(workflow_id);
 CREATE INDEX IF NOT EXISTS idx_spans_trace ON spans(trace_id);
 CREATE INDEX IF NOT EXISTS idx_spans_agent ON spans(agent_id);
 CREATE INDEX IF NOT EXISTS idx_workflows_started ON workflows(started_at);
+
+CREATE TABLE IF NOT EXISTS stock_prices (
+    ticker TEXT NOT NULL,
+    date TEXT NOT NULL,
+    open REAL NOT NULL,
+    high REAL NOT NULL,
+    low REAL NOT NULL,
+    close REAL NOT NULL,
+    volume INTEGER NOT NULL,
+    source TEXT DEFAULT 'unknown',
+    fetched_at TEXT NOT NULL,
+    PRIMARY KEY (ticker, date)
+);
+CREATE INDEX IF NOT EXISTS idx_prices_ticker_date ON stock_prices(ticker, date);
 """
 
 
@@ -542,3 +556,78 @@ def seed_demo_data():
 
     return {"agents": len(agents_def), "tasks": len(all_tasks),
             "spans": len(all_spans), "workflows": len(all_workflows)}
+
+
+# ---- Stock Price CRUD ----
+
+def upsert_ohlcv_batch(records: list) -> int:
+    """Insert or replace OHLCV records in the stock_prices table.
+
+    Args:
+        records: List of ``src.market.protocol.OHLCV`` Pydantic model instances.
+
+    Returns:
+        Number of rows upserted.
+    """
+    fetched_at = datetime.utcnow().isoformat()
+    with get_connection() as conn:
+        conn.executemany(
+            """INSERT OR REPLACE INTO stock_prices
+               (ticker, date, open, high, low, close, volume, source, fetched_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            [
+                (r.ticker, r.date.isoformat(), r.open, r.high, r.low,
+                 r.close, r.volume, r.source, fetched_at)
+                for r in records
+            ],
+        )
+    return len(records)
+
+
+def get_ohlcv(ticker: str, start=None, end=None) -> list:
+    """Return OHLCV records for *ticker* within the optional date window.
+
+    Args:
+        ticker: The stock ticker symbol (e.g. ``"RBLX"``).
+        start:  ``datetime.date`` or ``None`` for no lower bound.
+        end:    ``datetime.date`` or ``None`` for no upper bound.
+
+    Returns:
+        List of ``src.market.protocol.OHLCV`` instances ordered by date ascending.
+    """
+    from src.market.protocol import OHLCV  # deferred to avoid circular import
+    import datetime as _dt
+
+    clauses, params = ["ticker = ?"], [ticker]
+    if start:
+        clauses.append("date >= ?")
+        params.append(start.isoformat() if isinstance(start, _dt.date) else start)
+    if end:
+        clauses.append("date <= ?")
+        params.append(end.isoformat() if isinstance(end, _dt.date) else end)
+
+    where = " AND ".join(clauses)
+    with get_connection() as conn:
+        rows = conn.execute(
+            f"SELECT * FROM stock_prices WHERE {where} ORDER BY date ASC", params
+        ).fetchall()
+
+    return [
+        OHLCV(
+            ticker=r["ticker"],
+            date=_dt.date.fromisoformat(r["date"]),
+            open=r["open"], high=r["high"], low=r["low"],
+            close=r["close"], volume=r["volume"],
+            source=r["source"],
+        )
+        for r in rows
+    ]
+
+
+def get_distinct_tickers() -> list[str]:
+    """Return all ticker symbols that have price data in the DB."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT ticker FROM stock_prices ORDER BY ticker"
+        ).fetchall()
+    return [r["ticker"] for r in rows]
