@@ -2,7 +2,7 @@
 builder = "dockerfile"
 
 [deploy]
-startCommand = "streamlit run dashboard_app.py --server.address=0.0.0.0 --server.port=$PORT --server.headless=true"
+startCommand = "streamlit run dashboard_app.py --server.address=0.0.0.0 --server.port=${PORT:-8080} --server.headless=true"
 healthcheckPath = "/_stcore/health"
 healthcheckTimeout = 30
 restartPolicyType = "on_failure"
