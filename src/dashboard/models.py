@@ -13,6 +13,19 @@ class AgentStatus(str, Enum):
     ERROR = "error"
 
 
+class TaskType(str, Enum):
+    CODE_GENERATION = "code_generation"
+    CODE_REVIEW = "code_review"
+    BUG_FIX = "bug_fix"
+    DATA_EXTRACTION = "data_extraction"
+    DATA_ANALYSIS = "data_analysis"
+    RESEARCH = "research"
+    PLANNING = "planning"
+    DEPLOYMENT = "deployment"
+    SECURITY_AUDIT = "security_audit"
+    TEST_GENERATION = "test_generation"
+
+
 class TaskResult(str, Enum):
     SUCCESS = "success"
     FAILURE = "failure"

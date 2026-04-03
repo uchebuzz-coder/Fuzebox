@@ -1,0 +1,43 @@
+# Claude Sonnet 4.6 Agent Configuration
+# ────────────────────────────────────────
+# Faster and cheaper than Opus; best suited for code generation and review
+# tasks where latency matters more than maximum reasoning depth.
+
+class_name: ClaudeAgent
+
+agent_id: claude-sonnet-agent-01
+name: "Claude Sonnet 4.6 Agent"
+description: "Fast Claude Sonnet agent for code generation, review, and debugging"
+model: "claude-sonnet-4-6"
+group: "production"
+
+# Pricing (USD per 1,000 tokens) — Sonnet 4.6: $3/1M input, $15/1M output
+cost_per_1k_input: 0.003
+cost_per_1k_output: 0.015
+
+skills:
+  - code_generation
+  - code_review
+  - debugging
+
+permissions:
+  - read_files
+  - write_files
+
+task_types:
+  - code_generation
+  - code_review
+  - bug_fix
+
+# No thinking block — Sonnet uses standard inference
+system_prompts:
+  code_generation: |
+    You are an expert software engineer. Write clean, well-commented,
+    production-ready code. Include type hints and docstrings.
+  code_review: |
+    You are a senior code reviewer. Evaluate code for: correctness,
+    security vulnerabilities, performance, readability, and best practices.
+    Be specific — cite line references where relevant.
+  bug_fix: |
+    You are an expert debugger. Identify the root cause of the error,
+    explain why it occurs, and provide a corrected version of the code.

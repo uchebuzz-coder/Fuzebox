@@ -7,15 +7,27 @@ services:
     volumes:
       - ./data:/app/data
       - ./reports:/app/reports
-      - ./src:/app/src
+      - ./agents:/app/agents
+      - ./config:/app/config
+    # On-prem: copy .env.example → .env and fill in your key.
+    # Render: set ANTHROPIC_API_KEY in the Render dashboard — env_file is ignored there.
+    env_file:
+      - path: .env
+        required: false   # allows startup without a .env (e.g. CI, Render)
     environment:
+      # Pass-through: honours the value from .env, shell env, or Render's injected env.
+      # Never hardcode a value here.
+      - ANTHROPIC_API_KEY
+      - DASHBOARD_DB_PATH=${DASHBOARD_DB_PATH:-/app/data/agent_dashboard.db}
+      - AGENTS_CONFIG_DIR=${AGENTS_CONFIG_DIR:-/app/agents}
+      - MARKET_CONFIG_DIR=${MARKET_CONFIG_DIR:-/app/config/market}
       - STREAMLIT_SERVER_RUNONCONFIGURATIONCHANGE=true
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health').read()"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 5s
+      start_period: 15s
 
   cli:
     build: .
@@ -23,7 +35,16 @@ services:
     volumes:
       - ./data:/app/data
       - ./reports:/app/reports
-      - ./src:/app/src
+      - ./agents:/app/agents
+      - ./config:/app/config
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      - ANTHROPIC_API_KEY
+      - DASHBOARD_DB_PATH=${DASHBOARD_DB_PATH:-/app/data/agent_dashboard.db}
+      - AGENTS_CONFIG_DIR=${AGENTS_CONFIG_DIR:-/app/agents}
+      - MARKET_CONFIG_DIR=${MARKET_CONFIG_DIR:-/app/config/market}
     working_dir: /app
     entrypoint: python main.py
     command: status

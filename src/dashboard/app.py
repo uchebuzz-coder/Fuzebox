@@ -8,6 +8,31 @@ import numpy as np
 from datetime import datetime, timedelta
 
 from . import db, evaluators, economics, metrics
+from .playground import render_playground
+
+
+# ---------------------------------------------------------------------------
+# Cached resource initialisers — called once per Streamlit session
+# ---------------------------------------------------------------------------
+
+@st.cache_resource
+def _init_agent_registry():
+    """Load all agent YAML configs and populate the AgentRegistry."""
+    try:
+        from src.dashboard.agent_protocol import init_registry
+        return init_registry()
+    except Exception:
+        return None
+
+
+@st.cache_resource
+def _init_market_service():
+    """Return a StockDataService backed by the default yfinance source."""
+    try:
+        from src.market.service import get_stock_service
+        return get_stock_service()
+    except Exception:
+        return None
 
 
 def main():
@@ -18,8 +43,10 @@ def main():
         initial_sidebar_state="expanded",
     )
 
-    # Initialize database
+    # Initialize database and optional services
     db.init_db()
+    _init_agent_registry()
+    _init_market_service()
 
     # ---- Sidebar ----
     st.sidebar.title("Agent Performance Dashboard")
@@ -65,7 +92,8 @@ def main():
     page = st.sidebar.radio(
         "Navigate",
         ["Overview", "Agent Registry", "Task Scorecards",
-         "Economic Analysis", "Performance Metrics", "Workflow Traces"]
+         "Economic Analysis", "Performance Metrics", "Workflow Traces",
+         "Market Intelligence", "Agent Playground"]
     )
 
     # ---- Pages ----
@@ -81,6 +109,10 @@ def main():
         render_performance(start_date, end_date, selected_agent_ids)
     elif page == "Workflow Traces":
         render_traces(start_date, end_date)
+    elif page == "Market Intelligence":
+        render_market_intelligence()
+    elif page == "Agent Playground":
+        render_playground()
 
 
 # ==================== OVERVIEW ====================
@@ -208,6 +240,30 @@ def render_agent_registry(agent_ids):
                 lambda v: "background-color: #2196F3; color: white" if v else "background-color: #EEEEEE"
             )
             st.dataframe(styled, use_container_width=True)
+
+    # Registry routing table
+    st.divider()
+    st.subheader("Registry Routing")
+    registry = _init_agent_registry()
+    if registry and not registry.is_empty():
+        routing = registry.routing_table()
+        agent_name_map = {a.agent_id: a.name for a in agents}
+        routing_rows = []
+        for task_type, agent_ids in sorted(routing.items()):
+            routing_rows.append({
+                "Task Type": task_type,
+                "Agents (in priority order)": " → ".join(
+                    agent_name_map.get(aid, aid) for aid in agent_ids
+                ),
+                "Agent Count": len(agent_ids),
+            })
+        if routing_rows:
+            st.dataframe(pd.DataFrame(routing_rows), use_container_width=True)
+        else:
+            st.info("No routing entries — load demo data or run agents.")
+    else:
+        st.info("AgentRegistry is empty. Agents are registered when run_agent.py is executed "
+                "or when YAML configs exist in the agents/ directory.")
 
     # Permission violations
     st.subheader("Permission Violations")
@@ -605,6 +661,140 @@ def render_traces(start_date, end_date):
                 "Attributes": str(s.attributes) if s.attributes else "",
             })
         st.dataframe(pd.DataFrame(span_data), use_container_width=True)
+
+
+# ==================== MARKET INTELLIGENCE ====================
+
+def render_market_intelligence():
+    st.title("Market Intelligence")
+
+    svc = _init_market_service()
+    if svc is None:
+        st.error("Market service unavailable. Ensure src/market/ is installed correctly.")
+        return
+
+    # Load ticker mapping for display names
+    tickers_in_db = svc.get_available_tickers()
+
+    # Build display-name -> real-ticker map
+    ticker_display: dict[str, str] = {}
+    for t in tickers_in_db:
+        display = f"{svc.get_display_name(t)} ({svc.get_display_ticker(t)})"
+        ticker_display[display] = t
+
+    col_controls, col_fetch = st.columns([3, 1])
+
+    with col_fetch:
+        st.markdown("**Fetch New Data**")
+        fetch_ticker_raw = st.text_input("Ticker symbol", value="RBLX",
+                                         help="Real market ticker, e.g. RBLX, AAPL")
+        fetch_days = st.number_input("Days back", min_value=1, max_value=1825, value=90)
+        if st.button("Fetch from Yahoo Finance", type="primary"):
+            import datetime as _dt
+            end_dt = _dt.date.today()
+            start_dt = end_dt - _dt.timedelta(days=int(fetch_days))
+            with st.spinner(f"Fetching {fetch_ticker_raw} data..."):
+                stored = svc.fetch_and_store(
+                    fetch_ticker_raw.upper(), start=start_dt, end=end_dt
+                )
+            if stored:
+                st.success(f"Stored {stored} trading days for {fetch_ticker_raw.upper()}.")
+                st.rerun()
+            else:
+                st.warning("No data returned. Check the ticker symbol or date range.")
+
+    if not tickers_in_db:
+        st.info("No market data in the database yet. Use the 'Fetch New Data' panel to load prices.")
+        return
+
+    with col_controls:
+        selected_display = st.selectbox("Ticker", list(ticker_display.keys()))
+        selected_ticker = ticker_display[selected_display]
+
+        import datetime as _dt
+        col_d1, col_d2 = st.columns(2)
+        default_start = _dt.date.today() - _dt.timedelta(days=90)
+        view_start = col_d1.date_input("From", value=default_start)
+        view_end = col_d2.date_input("To", value=_dt.date.today())
+
+    st.divider()
+
+    df = svc.get_prices(selected_ticker, start=view_start, end=view_end)
+    if df.empty:
+        st.info(f"No price data for {selected_ticker} in the selected range. "
+                f"Try fetching data first.")
+        return
+
+    # KPI strip
+    latest = df.iloc[-1]
+    earliest = df.iloc[0]
+    period_return = (latest["close"] - earliest["close"]) / earliest["close"]
+    col1, col2, col3, col4, col5 = st.columns(5)
+    col1.metric("Latest Close", f"${latest['close']:.2f}")
+    col2.metric("Period High", f"${df['high'].max():.2f}")
+    col3.metric("Period Low", f"${df['low'].min():.2f}")
+    col4.metric("Period Return", f"{period_return:+.1%}")
+    col5.metric("Trading Days", len(df))
+
+    st.divider()
+
+    left, right = st.columns(2)
+
+    with left:
+        st.subheader("Price History")
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ax.plot(df["date"], df["close"], color="#2196F3", linewidth=1.5, label="Close")
+        ax.fill_between(df["date"], df["low"], df["high"], alpha=0.15, color="#2196F3", label="Low–High")
+        ax.set_ylabel("Price ($)")
+        ax.set_xlabel("")
+        display_name = svc.get_display_name(selected_ticker)
+        display_tick = svc.get_display_ticker(selected_ticker)
+        ax.set_title(f"{display_name} ({display_tick})")
+        ax.legend(fontsize=8)
+        import matplotlib.dates as mdates
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close()
+
+    with right:
+        st.subheader("Daily Returns")
+        df_ret = df.copy()
+        df_ret["daily_return"] = df_ret["close"].pct_change()
+        df_ret["cumulative_return"] = (1 + df_ret["daily_return"].fillna(0)).cumprod() - 1
+
+        fig, ax1 = plt.subplots(figsize=(8, 4))
+        colors = ["#4CAF50" if r >= 0 else "#F44336" for r in df_ret["daily_return"].fillna(0)]
+        ax1.bar(df_ret["date"], df_ret["daily_return"].fillna(0), color=colors, alpha=0.7)
+        ax1.set_ylabel("Daily Return", color="#555")
+        ax1.axhline(0, color="#999", linewidth=0.8)
+        ax2 = ax1.twinx()
+        ax2.plot(df_ret["date"], df_ret["cumulative_return"], color="#FF9800",
+                 linewidth=2, label="Cumulative")
+        ax2.set_ylabel("Cumulative Return", color="#FF9800")
+        ax1.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        st.pyplot(fig)
+        plt.close()
+
+    # Volume chart
+    st.subheader("Volume")
+    fig, ax = plt.subplots(figsize=(12, 3))
+    ax.bar(df["date"], df["volume"], color="#9C27B0", alpha=0.7)
+    ax.set_ylabel("Volume")
+    ax.xaxis.set_major_formatter(mdates.DateFormatter('%m/%d'))
+    plt.xticks(rotation=45)
+    plt.tight_layout()
+    st.pyplot(fig)
+    plt.close()
+
+    # Raw data table
+    st.subheader("Price Data")
+    display_df = df.copy()
+    display_df["date"] = display_df["date"].astype(str)
+    st.dataframe(display_df, use_container_width=True)
 
 
 if __name__ == "__main__":

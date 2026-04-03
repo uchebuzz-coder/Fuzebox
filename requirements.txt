@@ -5,5 +5,7 @@ opentelemetry-api==1.39.0 # Dec 2025 Release
 opentelemetry-sdk==1.39.0 # Dec 2025 Release
 streamlit==1.53.0 # Jan 2026 Release
 pydantic==2.12.5 # Nov 2025 Release
+pydantic-settings==2.7.0 # Jan 2026 Release
+pyyaml==6.0.2 # Aug 2024 Release
 yfinance==0.2.54 # Jan 2026 Release
 anthropic==0.88.0 # Apr 2026 Release
