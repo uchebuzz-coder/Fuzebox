@@ -21,7 +21,7 @@ COPY . .
 
 # Health check for Streamlit
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:${PORT:-8080}/_stcore/health').read()" || exit 1
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/_stcore/health').read()" || exit 1
 EXPOSE 8080
 
 CMD ["streamlit", "run", "dashboard_app.py", "--server.address=0.0.0.0", "--server.port=8080"]
